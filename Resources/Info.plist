@@ -1,0 +1,33 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleIdentifier</key><string>local.yuju.inputmethod.Yuju</string>
+<key>CFBundleName</key><string>语句拼音</string>
+<key>CFBundleDisplayName</key><string>语句拼音</string>
+<key>CFBundleExecutable</key><string>Yuju</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>CFBundleVersion</key><string>1</string>
+<key>CFBundleShortVersionString</key><string>1.0</string>
+<key>CFBundleDevelopmentRegion</key><string>zh_CN</string>
+<key>CFBundleURLTypes</key><array><dict><key>CFBundleURLName</key><string>语句拼音设置</string><key>CFBundleURLSchemes</key><array><string>yujupinyin</string></array></dict></array>
+<key>LSMinimumSystemVersion</key><string>13.0</string>
+<key>LSUIElement</key><true/>
+<key>NSPrincipalClass</key><string>NSApplication</string>
+<key>InputMethodConnectionName</key><string>Yuju_Connection</string>
+<key>InputMethodServerControllerClass</key><string>YujuInputController</string>
+<key>TISInputSourceID</key><string>local.yuju.inputmethod.Yuju</string>
+<key>ComponentInputModeDict</key><dict>
+<key>tsInputModeListKey</key><dict>
+<key>local.yuju.inputmethod.Yuju.Hans</key><dict>
+<key>TISInputSourceID</key><string>local.yuju.inputmethod.Yuju.Hans</string>
+<key>TISIntendedLanguage</key><string>zh-Hans</string>
+<key>tsInputModeCharacterRepertoireKey</key><array><string>Hans</string></array>
+<key>tsInputModeIsVisibleKey</key><true/>
+<key>tsInputModeDefaultStateKey</key><true/>
+<key>tsInputModePrimaryInScriptKey</key><true/>
+<key>tsInputModeScriptKey</key><string>smUnicodeScript</string>
+<key>tsInputModeMenuIconFileKey</key><string>Yuju.pdf</string>
+<key>tsInputModePaletteIconFileKey</key><string>Yuju.pdf</string>
+</dict></dict>
+<key>tsVisibleInputModeOrderedArrayKey</key><array><string>local.yuju.inputmethod.Yuju.Hans</string></array>
+</dict></dict></plist>

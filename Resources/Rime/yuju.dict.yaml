@@ -1,0 +1,11 @@
+---
+name: yuju
+version: "1.0"
+sort: by_weight
+import_tables:
+  - pinyin_simp
+...
+大模型	da mo xing	24000
+语言模型	yu yan mo xing	18000
+大语言模型	da yu yan mo xing	18000
+深度学习	shen du xue xi	16000
