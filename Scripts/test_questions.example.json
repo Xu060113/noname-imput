@@ -1,0 +1,28 @@
+[
+ {
+  "label": "answer in files",
+  "question": "What is <a term your files define>?",
+  "source": "<PDF file name without .pdf>",
+  "page": 1,
+  "phrases": [
+   "<words the answer must contain>"
+  ]
+ },
+ {
+  "label": "same question again",
+  "question": "What is <a term your files define>?",
+  "source": "<PDF file name without .pdf>",
+  "page": 1,
+  "phrases": [
+   "<words the answer must contain>"
+  ]
+ },
+ {
+  "label": "not in files",
+  "question": "What is Kubernetes?"
+ },
+ {
+  "label": "not in files 2",
+  "question": "How does Docker work?"
+ }
+]

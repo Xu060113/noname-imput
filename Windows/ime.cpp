@@ -102,6 +102,11 @@ class Service final : public ITfTextInputProcessor,
   std::vector<std::wstring> words;
   std::shared_ptr<Stream> stream;
   ULONGLONG due = 0;
+  bool fileMode = false; // this question carries the course files
+  // Ctrl+V seen: after the pause, read the clipboard and ask about the pasted text.
+  ITfContext *pasteContext = nullptr;
+  ULONGLONG pasteDue = 0;
+  static constexpr size_t maxPaste = 2000;
   static LRESULT CALLBACK windowProc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
     auto self = (Service *)GetWindowLongPtrW(w, GWLP_USERDATA);
     if (msg == WM_NCCREATE) {
@@ -142,6 +147,7 @@ class Service final : public ITfTextInputProcessor,
     question.clear();
     accepted.clear();
     mode.clear();
+    fileMode = false;
     if (popup) {
       KillTimer(popup, 1);
       ShowWindow(popup, SW_HIDE);
@@ -149,6 +155,8 @@ class Service final : public ITfTextInputProcessor,
   }
   void clearAll() {
     clearPrediction();
+    pasteDue = 0;
+    release(pasteContext);
     release(anchor);
     release(context);
     if (ime)
@@ -208,20 +216,54 @@ class Service final : public ITfTextInputProcessor,
     if (!anchor || FAILED(sel->IsEmpty(ec, &empty)) || !empty ||
         FAILED(sel->IsEqualStart(ec, anchor, TF_ANCHOR_START, &same)) || !same)
       return false;
-    if (prior.empty())
+    // Compare the last characters typed here with the document, ignoring line
+    // breaks: editors store the "\r\n" this service inserts as "\r" or "\n".
+    std::wstring expected = withoutBreaks(prior);
+    if (expected.empty())
       return true;
-    ITfRange *tail = nullptr;
-    if (FAILED(sel->Clone(&tail)))
-      return false;
-    LONG number = (LONG)std::min<size_t>(16, prior.size()), moved = 0;
-    wchar_t text[16];
+    std::wstring actual = withoutBreaks(textBefore(sel, ec, 32));
+    size_t number = std::min<size_t>(16, expected.size());
+    return actual.size() >= number &&
+           actual.compare(actual.size() - number, number, expected,
+                          expected.size() - number, number) == 0;
+  }
+  static std::wstring withoutBreaks(const std::wstring &s) {
+    std::wstring out;
+    for (wchar_t c : s)
+      if (c != L'\r' && c != L'\n')
+        out += c;
+    return out;
+  }
+  // How many document characters the text `s` occupies right after `origin`, or -1
+  // if the document does not hold `s` there. A line break may be stored as "\r\n",
+  // "\r" or "\n", so the count can be smaller than s.size().
+  LONG insertedLength(ITfRange *origin, TfEditCookie ec, const std::wstring &s) {
+    ITfRange *range = nullptr;
+    if (FAILED(origin->Clone(&range)))
+      return -1;
+    LONG moved = 0;
+    std::vector<wchar_t> doc(s.size() + 1);
     ULONG read = 0;
-    bool ok = SUCCEEDED(tail->ShiftStart(ec, -number, &moved, nullptr)) &&
-              moved == -number &&
-              SUCCEEDED(tail->GetText(ec, 0, text, number, &read)) &&
-              prior.compare(prior.size() - number, number, text, read) == 0;
-    tail->Release();
-    return ok;
+    bool ok = SUCCEEDED(range->ShiftEnd(ec, (LONG)s.size(), &moved, nullptr)) &&
+              SUCCEEDED(range->GetText(ec, 0, doc.data(), (ULONG)s.size(), &read));
+    range->Release();
+    if (!ok)
+      return -1;
+    auto isBreak = [](wchar_t c) { return c == L'\r' || c == L'\n'; };
+    size_t i = 0, j = 0;
+    while (i < s.size()) {
+      if (j >= read)
+        return -1;
+      if (isBreak(s[i]) && isBreak(doc[j])) {
+        i += s[i] == L'\r' && i + 1 < s.size() && s[i + 1] == L'\n' ? 2 : 1;
+        j += doc[j] == L'\r' && j + 1 < read && doc[j + 1] == L'\n' ? 2 : 1;
+      } else if (s[i] == doc[j]) {
+        i++;
+        j++;
+      } else
+        return -1;
+    }
+    return (LONG)j;
   }
   void track(ITfContext *ctx, ITfRange *sel) {
     if (context != ctx) {
@@ -272,11 +314,37 @@ class Service final : public ITfTextInputProcessor,
   }
   bool insert(ITfContext *ctx, ITfRange *sel, TfEditCookie ec,
               const std::wstring &s) {
-    if (FAILED(sel->SetText(ec, 0, s.data(), (LONG)s.size())))
+    // Remember where the text starts; backward gravity keeps this point in front of
+    // the inserted text.
+    ITfRange *origin = nullptr;
+    if (FAILED(sel->Clone(&origin)))
       return false;
-    sel->Collapse(ec, TF_ANCHOR_END);
-    TF_SELECTION cursor{sel, {TF_AE_NONE, FALSE}};
-    if (FAILED(ctx->SetSelection(ec, 1, &cursor)))
+    origin->Collapse(ec, TF_ANCHOR_START);
+    origin->SetGravity(ec, TF_GRAVITY_BACKWARD, TF_GRAVITY_BACKWARD);
+    bool ok = SUCCEEDED(sel->SetText(ec, 0, s.data(), (LONG)s.size()));
+    if (ok) {
+      // Notepad left the caret before a "\r\n..." insertion when the range end was
+      // trusted, so measure the inserted text in the document and put the caret
+      // after it. Fall back to the range end if the document text differs.
+      LONG length = insertedLength(origin, ec, s), moved = 0;
+      ITfRange *after = nullptr;
+      bool measured = length >= 0 && SUCCEEDED(origin->Clone(&after)) &&
+                      SUCCEEDED(after->ShiftEnd(ec, length, &moved, nullptr)) &&
+                      moved == length;
+      if (measured) {
+        after->Collapse(ec, TF_ANCHOR_END);
+        // `sel` is the caller's range; move both of its ends onto the new caret.
+        sel->ShiftEndToRange(ec, after, TF_ANCHOR_START);
+        sel->ShiftStartToRange(ec, after, TF_ANCHOR_START);
+      } else {
+        sel->Collapse(ec, TF_ANCHOR_END);
+      }
+      release(after);
+      TF_SELECTION cursor{sel, {TF_AE_NONE, FALSE}};
+      ok = SUCCEEDED(ctx->SetSelection(ec, 1, &cursor));
+    }
+    origin->Release();
+    if (!ok)
       return false;
     prior += s;
     if (prior.size() > 512)
@@ -284,7 +352,120 @@ class Service final : public ITfTextInputProcessor,
     track(ctx, sel);
     return true;
   }
+  // Called after clearAll() for a key this service lets through. Ctrl+V (also with
+  // Shift) starts the paste question timer; the application does the pasting itself.
+  void notePaste(ITfContext *ctx, WPARAM vk) {
+    if (vk != 'V' || GetKeyState(VK_CONTROL) >= 0 || GetKeyState(VK_MENU) < 0 ||
+        GetKeyState(VK_LWIN) < 0 || GetKeyState(VK_RWIN) < 0 || restricted ||
+        !ime || !popup || !aiEnabled())
+      return;
+    release(pasteContext);
+    pasteContext = ctx;
+    ctx->AddRef();
+    pasteDue = GetTickCount64() + 600;
+    SetTimer(popup, 1, 75, nullptr);
+  }
+  std::wstring clipboardText() {
+    std::wstring text;
+    if (!OpenClipboard(popup))
+      return text;
+    if (HANDLE data = GetClipboardData(CF_UNICODETEXT)) {
+      if (auto p = (const wchar_t *)GlobalLock(data)) {
+        size_t limit = GlobalSize(data) / sizeof(wchar_t);
+        text.assign(p, wcsnlen(p, limit));
+        GlobalUnlock(data);
+      }
+    }
+    CloseClipboard();
+    return text;
+  }
+  // Up to `count` characters immediately before the start of the selection.
+  std::wstring textBefore(ITfRange *sel, TfEditCookie ec, LONG count) {
+    std::wstring text;
+    ITfRange *range = nullptr;
+    LONG moved = 0;
+    if (FAILED(sel->Clone(&range)))
+      return text;
+    range->Collapse(ec, TF_ANCHOR_START);
+    if (SUCCEEDED(range->ShiftStart(ec, -count, &moved, nullptr)) && moved < 0) {
+      std::vector<wchar_t> buffer((size_t)-moved);
+      ULONG read = 0;
+      if (SUCCEEDED(range->GetText(ec, 0, buffer.data(), (ULONG)buffer.size(), &read)))
+        text.assign(buffer.data(), read);
+    }
+    range->Release();
+    return text;
+  }
+  static std::wstring newlinesAsLf(std::wstring s) {
+    std::wstring out;
+    for (size_t i = 0; i < s.size(); i++) {
+      if (s[i] == L'\r') {
+        out += L'\n';
+        if (i + 1 < s.size() && s[i + 1] == L'\n')
+          i++;
+      } else
+        out += s[i];
+    }
+    return out;
+  }
+  // The pause after Ctrl+V is over: if the clipboard text (English, at most 2000
+  // characters) sits right before the caret, ask about it with the course files.
+  void startPasteQuestion() {
+    ITfContext *ctx = pasteContext;
+    pasteContext = nullptr;
+    pasteDue = 0;
+    ITfDocumentMgr *doc = nullptr;
+    ITfContext *focused = nullptr;
+    if (SUCCEEDED(manager->GetFocus(&doc)) && doc) {
+      doc->GetTop(&focused);
+      doc->Release();
+    }
+    bool active = ctx && focused == ctx;
+    release(focused);
+    std::wstring clip = active ? newlinesAsLf(clipboardText()) : L"";
+    auto from = clip.find_first_not_of(L" \t\n");
+    auto to = clip.find_last_not_of(L" \t\n");
+    std::wstring asked =
+        from == std::wstring::npos ? L"" : clip.substr(from, to - from + 1);
+    if (asked.empty() || clip.size() > maxPaste || hasHan(clip) || !aiEnabled()) {
+      release(ctx);
+      clearAll();
+      return;
+    }
+    edit(ctx, TF_ES_READ, [&](TfEditCookie ec) {
+      TF_SELECTION sel{};
+      ULONG count = 0;
+      if (FAILED(ctx->GetSelection(ec, TF_DEFAULT_SELECTION, 1, &sel, &count)) ||
+          !count)
+        return;
+      BOOL empty = FALSE;
+      if (!secure(ctx, sel.range, ec) && SUCCEEDED(sel.range->IsEmpty(ec, &empty)) &&
+          empty) {
+        std::wstring before = textBefore(sel.range, ec, (LONG)clip.size() + 64);
+        std::wstring lf = newlinesAsLf(before);
+        if (lf.size() >= clip.size() &&
+            lf.compare(lf.size() - clip.size(), clip.size(), clip) == 0) {
+          track(ctx, sel.range);
+          prior = before.size() > 512 ? before.substr(before.size() - 512) : before;
+          question = asked;
+          accepted.clear();
+          mode = "answer";
+          fileMode = true;
+          stream = predict(question, accepted, mode, true);
+        }
+      }
+      sel.range->Release();
+    });
+    release(ctx);
+    if (!stream)
+      clearAll();
+  }
   void poll() {
+    if (pasteDue) {
+      if (GetTickCount64() >= pasteDue)
+        startPasteQuestion();
+      return;
+    }
     if (!context || !anchor || !aiEnabled()) {
       clearPrediction();
       return;
@@ -319,7 +500,7 @@ class Service final : public ITfTextInputProcessor,
       }
       if (due && GetTickCount64() >= due) {
         due = 0;
-        stream = predict(question, accepted, mode);
+        stream = predict(question, accepted, mode, fileMode);
       }
       if (stream) {
         bool completed;
@@ -393,6 +574,8 @@ class Service final : public ITfTextInputProcessor,
       clearAll();
     if (secure(ctx, sel, ec) || !wants(vk, flags)) {
       clearAll();
+      if (!secure(ctx, sel, ec))
+        notePaste(ctx, vk);
       return false;
     }
     if (raw.empty() && vk == VK_ESCAPE) {
@@ -402,19 +585,22 @@ class Service final : public ITfTextInputProcessor,
     if (raw.empty() && !words.empty() &&
         (vk == VK_TAB || (vk >= '1' && vk < '1' + words.size()))) {
       size_t n = vk == VK_TAB ? 0 : vk - '1';
-      std::wstring word = spaced(
-          words[n],
-          accepted.empty() ? (mode == "answer" ? L"" : question) : accepted);
-      if (!insert(ctx, sel, ec,
-                  (accepted.empty() && mode == "answer" ? L"\r\n" : L"") +
-                      word)) {
+      const std::wstring &before = accepted.empty() ? question : accepted;
+      std::wstring word = spaced(words[n], before);
+      // An answer follows the question on the same line after one space. Edge
+      // inserted the first word twice whenever the insertion began with a line break
+      // (single "\n" or "\r\n"), so answers no longer start a new line.
+      if (accepted.empty() && mode == "answer" && !before.empty() &&
+          !iswspace(before.back()) && !word.empty() && word[0] != L' ')
+        word = L" " + word;
+      if (!insert(ctx, sel, ec, word)) {
         clearAll();
         return false;
       }
       accepted += word;
       if (n) {
         stream->cancelled = true;
-        stream = predict(question, accepted, mode);
+        stream = predict(question, accepted, mode, fileMode);
         words.clear();
       } else {
         std::lock_guard<std::mutex> guard(stream->lock);
@@ -430,10 +616,19 @@ class Service final : public ITfTextInputProcessor,
       track(ctx, sel);
     std::wstring commit;
     bool handled = true;
+    int ch = symbol(vk, flags);
+    // Judge the sentence from the document itself: letters typed with Shift or Caps
+    // Lock reach the application directly and never enter `prior`.
+    std::wstring typed = textBefore(sel, ec, 512);
+    std::wstring sentence = currentSentence(typed.empty() ? prior : typed);
     if (vk == VK_RETURN && !raw.empty()) {
       const char *input = rime()->get_input(ime);
       commit = spaced(wide(input ? input : ""), prior);
       rime()->clear_composition(ime);
+    } else if (raw.empty() && ch > 0 && ch < 128 && strchr(",.?!:;()[]/", ch) &&
+               !sentence.empty() && !hasHan(sentence)) {
+      // Inside an English sentence punctuation stays half-width ("?" not "？").
+      commit = spaced(std::wstring(1, (wchar_t)ch), prior);
     } else {
       handled = rime()->process_key(ime, symbol(vk, flags), 0);
       RIME_STRUCT(RimeCommit, c);
@@ -458,9 +653,26 @@ class Service final : public ITfTextInputProcessor,
       rime()->free_context(&state);
     }
     if (raw.empty() && !commit.empty() && aiEnabled()) {
-      question = prior;
-      due = GetTickCount64() + 600;
-      SetTimer(popup, 1, 75, nullptr);
+      // Chinese sentence: continue or answer as before, without files. English
+      // sentence: only a question ending in "?" is asked, with the course files.
+      std::wstring now = textBefore(sel, ec, 512);
+      if (now.empty())
+        now = prior;
+      std::wstring current = currentSentence(now);
+      bool ask = true;
+      if (hasHan(current)) {
+        question = prior;
+      } else if (!current.empty() && endsWithQuestionMark(now)) {
+        question = current + L"?";
+        mode = "answer";
+        fileMode = true;
+      } else {
+        ask = false;
+      }
+      if (ask) {
+        due = GetTickCount64() + 600;
+        SetTimer(popup, 1, 75, nullptr);
+      }
     }
     paint(sel, ec);
     return handled;
@@ -566,11 +778,19 @@ public:
     release(manager);
     return S_OK;
   }
+  // Shift or Caps Lock on its own only prepares the next key (an upper-case letter,
+  // "?"); it must not reset what has been typed so far.
+  static bool modifierOnly(WPARAM vk) {
+    return vk == VK_SHIFT || vk == VK_LSHIFT || vk == VK_RSHIFT || vk == VK_CAPITAL;
+  }
   HRESULT STDMETHODCALLTYPE OnTestKeyDown(ITfContext *ctx, WPARAM vk, LPARAM lp,
                                           BOOL *eaten) override {
     *eaten = FALSE;
+    if (modifierOnly(vk))
+      return S_OK;
     if (!wants(vk, lp)) {
       clearAll();
+      notePaste(ctx, vk);
       return S_OK;
     }
     edit(ctx, TF_ES_READ, [&](TfEditCookie ec) {
@@ -589,6 +809,8 @@ public:
   HRESULT STDMETHODCALLTYPE OnKeyDown(ITfContext *ctx, WPARAM vk, LPARAM lp,
                                       BOOL *eaten) override {
     *eaten = FALSE;
+    if (modifierOnly(vk))
+      return S_OK;
     edit(ctx, TF_ES_READWRITE, [&](TfEditCookie ec) {
       TF_SELECTION sel{};
       ULONG n = 0;

@@ -49,6 +49,9 @@ def main():
     run(["tar", "-xf", archive, "-C", dep])
     sdk = dep / "dist"
     flags = [zig, "c++", "-target", "x86_64-windows-gnu", "-std=c++17", "-Os"]
+    if os.name == "nt":  # the text helpers the IME relies on; stop before packaging if they break
+        run([*flags, "Windows/common_test.cpp", "-o", WORK / "common_test.exe", "-luser32", "-ladvapi32"])
+        run([WORK / "common_test.exe"])
     run([*flags, "-I" + str(sdk / "include"), "-shared", "Windows/ime.cpp",
          "-o", PAYLOAD / "YujuIME.dll", "-lmsctf", "-lole32", "-loleaut32", "-luuid",
          "-luser32", "-lgdi32", "-lshell32", "-ladvapi32", "-lwinhttp"])
@@ -78,7 +81,7 @@ def main():
     if (nsis.parent.parent / "share/nsis").is_dir():
         env["NSISDIR"] = str(nsis.parent.parent / "share/nsis")
     switch = "/" if os.name == "nt" else "-"
-    run([nsis, switch + "V2", switch + "DPAYLOAD=" + str(PAYLOAD), "Windows/setup.nsi"], env=env)
+    run([nsis, switch + "INPUTCHARSET", "UTF8", switch + "V2", switch + "DPAYLOAD=" + str(PAYLOAD), "Windows/setup.nsi"], env=env)
     print(ROOT / "dist/Yuju-Setup-Windows-x64.exe")
 
 
