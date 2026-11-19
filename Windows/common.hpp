@@ -2,6 +2,7 @@
 #define UNICODE
 #define _UNICODE
 #define NOMINMAX
+#include "length.hpp"
 #include <algorithm>
 #include <string>
 #include <vector>
@@ -44,23 +45,24 @@ inline bool aiEnabled() {
                       &bytes) == ERROR_SUCCESS &&
          value == 1;
 }
-inline std::wstring spaced(std::wstring word, const std::wstring &previous) {
-  if (previous.empty() || word.empty())
-    return word;
-  auto first = word.find_first_not_of(L' ');
-  if (first == std::wstring::npos)
-    return word;
-  auto letter = [](wchar_t c) {
-    return (c >= L'a' && c <= L'z') || (c >= L'A' && c <= L'Z');
-  };
-  auto last = previous.back();
-  if (wcschr(L",.!?;:)]’'", word[first]) || iswspace(last))
-    return word.substr(first);
-  bool punctuation = wcschr(L",.!?;:", last) && previous.size() > 1 &&
-                     letter(previous[previous.size() - 2]);
-  if (letter(word[first]) && (letter(last) || punctuation))
-    return L" " + word.substr(first);
-  return word;
+inline LengthLimits readLengthLimits() {
+  LengthLimits limits;
+  DWORD pair[2]{};
+  DWORD bytes = sizeof(pair);
+  if (RegGetValueW(HKEY_CURRENT_USER, L"Software\\Yuju", L"PredictionLengths",
+                   RRF_RT_REG_BINARY, nullptr, pair, &bytes) == ERROR_SUCCESS &&
+      bytes == sizeof(pair) && LengthLimits::valid(pair[0]) &&
+      LengthLimits::valid(pair[1])) {
+    limits = {pair[0], pair[1]};
+  }
+  return limits;
+}
+
+inline bool writeLengthLimits(const LengthLimits &limits) {
+  const DWORD pair[] = {limits.answer, limits.continuation};
+  return RegSetKeyValueW(HKEY_CURRENT_USER, L"Software\\Yuju",
+                         L"PredictionLengths", REG_BINARY, pair,
+                         sizeof(pair)) == ERROR_SUCCESS;
 }
 inline std::wstring moduleDir(HMODULE module) {
   wchar_t path[32768];

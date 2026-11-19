@@ -13,6 +13,18 @@ ShowInstDetails show
 !insertmacro MUI_UNPAGE_CONFIRM
 !insertmacro MUI_UNPAGE_INSTFILES
 !insertmacro MUI_LANGUAGE "SimpChinese"
+!define VERSION "1.1.0"
+!define RUNTIME "$INSTDIR\${VERSION}"
+!macro RemoveRuntime ROOT
+  Delete /REBOOTOK "${ROOT}\YujuIME.dll"
+  Delete /REBOOTOK "${ROOT}\rime.dll"
+  Delete /REBOOTOK "${ROOT}\YujuSettings.exe"
+  Delete /REBOOTOK "${ROOT}\Rime\build\yuju.*.bin"
+  Delete "${ROOT}\Rime\build\yuju_pinyin.schema.yaml"
+  Delete "${ROOT}\Rime\build\default.yaml"
+  RMDir "${ROOT}\Rime\build"
+  RMDir "${ROOT}\Rime"
+!macroend
 Function .onInit
   ${IfNot} ${RunningX64}
     MessageBox MB_ICONSTOP "此安装包适用于 Windows x64。"
@@ -22,21 +34,21 @@ FunctionEnd
 Section
   SetRegView 64
   SetShellVarContext all
-  SetOutPath "$INSTDIR"
+  SetOutPath "${RUNTIME}"
   File "${PAYLOAD}/YujuIME.dll"
   File "${PAYLOAD}/YujuSettings.exe"
   File "${PAYLOAD}/rime.dll"
-  SetOutPath "$INSTDIR\Rime\build"
+  SetOutPath "${RUNTIME}\Rime\build"
   File "${PAYLOAD}/Rime/build/*"
   SetOutPath "$INSTDIR\Licenses"
   File "../Resources/Licenses/*"
   SetOutPath "$INSTDIR"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\YujuInput" "DisplayName" "语句拼音"
-  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\YujuInput" "DisplayVersion" "1.0"
+  WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\YujuInput" "DisplayVersion" "${VERSION}"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\YujuInput" "UninstallString" '"$INSTDIR\Uninstall.exe"'
   ${DisableX64FSRedirection}
-  ExecWait '"$SYSDIR\regsvr32.exe" /s "$INSTDIR\YujuIME.dll"' $0
+  ExecWait '"$SYSDIR\regsvr32.exe" /s "${RUNTIME}\YujuIME.dll"' $0
   ${EnableX64FSRedirection}
   StrCmp $0 "0" registered
     MessageBox MB_ICONSTOP "输入法注册失败（$0）。可在已安装的应用中卸载或重新运行安装程序。"
@@ -44,29 +56,26 @@ Section
     Abort
   registered:
   CreateDirectory "$SMPROGRAMS\语句拼音"
-  CreateShortCut "$SMPROGRAMS\语句拼音\DeepSeek 设置.lnk" "$INSTDIR\YujuSettings.exe"
+  Delete "$SMPROGRAMS\语句拼音\DeepSeek 设置.lnk"
+  CreateShortCut "$SMPROGRAMS\语句拼音\控制后台.lnk" "${RUNTIME}\YujuSettings.exe"
   CreateShortCut "$SMPROGRAMS\语句拼音\卸载语句拼音.lnk" "$INSTDIR\Uninstall.exe"
 SectionEnd
 Section "Uninstall"
   SetShellVarContext all
   SetRegView 64
   ${DisableX64FSRedirection}
-  ExecWait '"$SYSDIR\regsvr32.exe" /s /u "$INSTDIR\YujuIME.dll"' $0
+  ExecWait '"$SYSDIR\regsvr32.exe" /s /u "${RUNTIME}\YujuIME.dll"' $0
   ${EnableX64FSRedirection}
   StrCmp $0 "0" +3
     MessageBox MB_ICONSTOP "注销失败（$0），请关闭使用输入法的应用后重试。"
     Abort
   Delete "$SMPROGRAMS\语句拼音\DeepSeek 设置.lnk"
+  Delete "$SMPROGRAMS\语句拼音\控制后台.lnk"
   Delete "$SMPROGRAMS\语句拼音\卸载语句拼音.lnk"
   RMDir "$SMPROGRAMS\语句拼音"
-  Delete /REBOOTOK "$INSTDIR\YujuIME.dll"
-  Delete /REBOOTOK "$INSTDIR\rime.dll"
-  Delete /REBOOTOK "$INSTDIR\YujuSettings.exe"
-  Delete /REBOOTOK "$INSTDIR\Rime\build\yuju.*.bin"
-  Delete "$INSTDIR\Rime\build\yuju_pinyin.schema.yaml"
-  Delete "$INSTDIR\Rime\build\default.yaml"
-  RMDir "$INSTDIR\Rime\build"
-  RMDir "$INSTDIR\Rime"
+  !insertmacro RemoveRuntime "${RUNTIME}"
+  RMDir /REBOOTOK "${RUNTIME}"
+  !insertmacro RemoveRuntime "$INSTDIR"
   Delete "$INSTDIR\Licenses\*-LICENSE"
   Delete "$INSTDIR\Licenses\pinyin-simp-AUTHORS"
   RMDir "$INSTDIR\Licenses"

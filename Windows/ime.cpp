@@ -99,6 +99,7 @@ class Service final : public ITfTextInputProcessor,
   bool restricted = false;
   std::wstring prior, raw, question, accepted;
   std::string mode;
+  LengthLimits limits;
   std::vector<std::wstring> words;
   std::shared_ptr<Stream> stream;
   ULONGLONG due = 0;
@@ -319,7 +320,7 @@ class Service final : public ITfTextInputProcessor,
       }
       if (due && GetTickCount64() >= due) {
         due = 0;
-        stream = predict(question, accepted, mode);
+        stream = predict(question, accepted, mode, limits);
       }
       if (stream) {
         bool completed;
@@ -327,7 +328,7 @@ class Service final : public ITfTextInputProcessor,
         {
           std::lock_guard<std::mutex> guard(stream->lock);
           if (!stream->rows.empty())
-            next = stream->rows.front();
+            next = stream->rows.front().words;
           mode = stream->mode;
           completed = stream->done && next.empty();
         }
@@ -412,15 +413,24 @@ class Service final : public ITfTextInputProcessor,
         return false;
       }
       accepted += word;
-      if (n) {
+      if (characterCount(accepted) >= limits.forMode(mode)) {
+        clearPrediction();
+        return true;
+      }
+      bool branch;
+      {
+        std::lock_guard<std::mutex> guard(stream->lock);
+        branch = n != 0 || stream->rows.front().firstIsBranch;
+      }
+      if (branch) {
         stream->cancelled = true;
-        stream = predict(question, accepted, mode);
+        stream = predict(question, accepted, mode, limits);
         words.clear();
       } else {
         std::lock_guard<std::mutex> guard(stream->lock);
         stream->rows.pop_front();
         words = stream->rows.empty() ? std::vector<std::wstring>{}
-                                     : stream->rows.front();
+                                     : stream->rows.front().words;
       }
       paint(sel, ec);
       return true;
@@ -458,6 +468,7 @@ class Service final : public ITfTextInputProcessor,
       rime()->free_context(&state);
     }
     if (raw.empty() && !commit.empty() && aiEnabled()) {
+      limits = readLengthLimits();
       question = prior;
       due = GetTickCount64() + 600;
       SetTimer(popup, 1, 75, nullptr);

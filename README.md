@@ -4,12 +4,12 @@
 
 ## 下载
 
-| 平台 | 适用系统 | v1.0.0 下载 |
+| 平台 | 适用系统 | 下载 |
 | --- | --- | --- |
 | macOS | macOS 13 及以上，Apple 芯片或 Intel | [Mac 安装包（ZIP）](https://github.com/Xu060113/noname-imput/releases/download/v1.0.0/Yuju-macOS-universal.zip) |
-| Windows | Windows 10 或 11，Intel／AMD x64 桌面应用 | [Windows 安装程序（EXE）](https://github.com/Xu060113/noname-imput/releases/download/v1.0.0/Yuju-Setup-Windows-x64.exe) |
+| Windows | Windows 10 或 11，Intel／AMD x64 桌面应用 | [Windows 安装程序（EXE）](https://github.com/Xu060113/noname-imput/releases/download/v1.1.0/Yuju-Setup-Windows-x64.exe) |
 
-需要自行构建时，可以下载包含两端代码、词典和测试的[完整源码包](https://github.com/Xu060113/noname-imput/releases/download/v1.0.0/Yuju-Source.zip)。
+需要自行构建时，可以下载包含两端代码、词典和测试的[完整源码包](https://github.com/Xu060113/noname-imput/releases/download/v1.1.0/Yuju-Source.zip)。
 
 ## 试着输入一句话
 
@@ -31,7 +31,20 @@
 
 ## Windows
 
-将 `Yuju-Setup-Windows-x64.exe` 复制到 Windows 10 或 11 的 Intel/AMD 64 位电脑并运行。安装时需要管理员权限以注册系统输入法。安装后，从开始菜单打开「语句拼音 → DeepSeek 设置」，填写自己的 API Key 并保存。按 Win + 空格切换输入法。若列表中尚未出现，在「设置 → 时间和语言 → 语言和区域 → 中文（简体）→ 语言选项 → 添加键盘」中选择「语句拼音」。卸载入口在「已安装的应用」中。
+将 `Yuju-Setup-Windows-x64.exe` 复制到 Windows 10 或 11 的 Intel/AMD 64 位电脑并运行。安装时需要管理员权限以注册系统输入法。安装后，从开始菜单打开「语句拼音 → 控制后台」，填写自己的 API Key，勾选「停顿后显示 AI 候选」并保存。按 Win + 空格切换输入法。若列表中尚未出现，在「设置 → 时间和语言 → 语言和区域 → 中文（简体）→ 语言选项 → 添加键盘」中选择「语句拼音」。卸载入口在「已安装的应用」中。
+
+从 v1.0.0 升级后，请重新打开原先正在使用语句拼音的编辑器，以载入新版输入法。
+
+### 调整回答和续写长度
+
+「控制后台」可以随时从开始菜单打开。回答「什么是大模型」和接着写「我今天想」使用各自的字符上限。
+
+| 后台设置 | 默认上限 | 可调范围 |
+| --- | --- | --- |
+| 问题回答上限 | 80 个字符 | 8–300 |
+| 语句续写上限 | 24 个字符 | 8–300 |
+
+例如，将回答设为 120、续写设为 16，提问时可以逐词接出较长解释，写半句话时最多补 16 个字符。保存后从下一次预测生效，可以关闭后台继续打字。空格与标点计入上限，原文和答案开头的换行不计。改选其他候选时，已经接受的内容仍计入本次总长度。模型可以提前结束。
 
 Windows 版使用原生 TSF 组件，面向 x64 桌面应用。设置按用户保存，密钥存入 Windows 凭据管理器中的 `Yuju/DeepSeek`。本版安装程序未经 Authenticode 发布者签名。Windows ARM64 原生应用和 32 位应用需要对应架构的输入法组件。
 
@@ -43,7 +56,7 @@ Windows 版使用原生 TSF 组件，面向 x64 桌面应用。设置按用户�
 
 ## 项目内容
 
-v1.0.0 已在 Mac 上验证真实拼音词库、英文空格与模拟流式回答。Windows 版已完成交叉编译和安装包完整性检查，Windows 实机安装、备忘录和浏览器中的完整在线问答仍待验证。
+v1.0.0 已在 Mac 上验证真实拼音词库、英文空格与模拟流式回答。Windows v1.1.0 已通过回答与续写长度、备选分支和英文空格计数测试，并完成交叉编译和安装包完整性检查，Windows 实机安装、备忘录和浏览器中的完整在线问答仍待验证。
 
 `Sources` 为 Mac 实现，`Windows` 为 TSF、WinHTTP、设置和安装器源码，`Resources/Rime` 为共享方案和词典，`Tests` 为固定响应与在线检查。模型为 `deepseek-flash`，通过 `https://api.deepseek.com/chat/completions` 流式调用，关闭思考模式。英文空格、问答换行和各候选的实际文字均由输入法在确认后提交。
 
