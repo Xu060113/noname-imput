@@ -27,7 +27,7 @@ struct InternetHandle {
 
 inline void runModel(std::shared_ptr<Stream> stream, const std::string &input,
                      const std::string &accepted, const std::string &mode,
-                     LengthLimits limits) {
+                     LengthLimits limits, const std::wstring &lastAccepted) {
   using json = nlohmann::json;
   std::string key = readKey();
   if (key.empty() || stream->cancelled || !aiEnabled())
@@ -140,7 +140,7 @@ inline void runModel(std::shared_ptr<Stream> stream, const std::string &input,
             return;
           stream->mode = mode.empty() ? m : mode;
           budget.emplace(limits.forMode(stream->mode), wide(input),
-                         acceptedText, stream->mode);
+                         acceptedText, stream->mode, lastAccepted);
         } else if (frame.is_array() && frame.size() >= 1 && frame.size() <= 3 &&
                    ++rowCount <= 512) {
           std::vector<std::wstring> words;
@@ -165,13 +165,14 @@ inline void runModel(std::shared_ptr<Stream> stream, const std::string &input,
   }
 }
 inline std::shared_ptr<Stream> predict(std::wstring text, std::wstring accepted,
-                                       std::string mode, LengthLimits limits) {
+                                       std::string mode, LengthLimits limits,
+                                       std::wstring lastAccepted = {}) {
   auto stream = std::make_shared<Stream>();
   ++moduleUsers;
   std::thread([stream, text = utf8(text), accepted = utf8(accepted), mode,
-               limits] {
+               limits, lastAccepted = std::move(lastAccepted)] {
     try {
-      runModel(stream, text, accepted, mode, limits);
+      runModel(stream, text, accepted, mode, limits, lastAccepted);
     } catch (...) {
     }
     {

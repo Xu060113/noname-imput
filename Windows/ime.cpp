@@ -95,6 +95,7 @@ class Service final : public ITfTextInputProcessor,
   ITfContext *context = nullptr;
   ITfRange *anchor = nullptr;
   HWND popup = nullptr;
+  WPARAM selectionKey = 0;
   RimeSessionId ime = 0;
   bool restricted = false;
   std::wstring prior, raw, question, accepted;
@@ -109,8 +110,9 @@ class Service final : public ITfTextInputProcessor,
       self = (Service *)((CREATESTRUCTW *)lp)->lpCreateParams;
       SetWindowLongPtrW(w, GWLP_USERDATA, (LONG_PTR)self);
     }
-    if (msg == WM_TIMER && self) {
-      self->poll();
+    if (msg == WM_TIMER && wp == 1 && self) {
+      if (self->due || self->stream)
+        self->poll();
       return 0;
     }
     if (msg == WM_NCHITTEST)
@@ -149,6 +151,7 @@ class Service final : public ITfTextInputProcessor,
     }
   }
   void clearAll() {
+    selectionKey = 0;
     clearPrediction();
     release(anchor);
     release(context);
@@ -204,25 +207,29 @@ class Service final : public ITfTextInputProcessor,
     prop->Release();
     return blocked;
   }
-  bool sameCaret(ITfRange *sel, TfEditCookie ec) {
+  std::optional<bool> sameCaret(ITfRange *sel, TfEditCookie ec) {
     BOOL same = FALSE, empty = FALSE;
-    if (!anchor || FAILED(sel->IsEmpty(ec, &empty)) || !empty ||
-        FAILED(sel->IsEqualStart(ec, anchor, TF_ANCHOR_START, &same)) || !same)
+    if (!anchor)
+      return false;
+    if (FAILED(sel->IsEmpty(ec, &empty)) ||
+        FAILED(sel->IsEqualStart(ec, anchor, TF_ANCHOR_START, &same)))
+      return std::nullopt;
+    if (!empty || !same)
       return false;
     if (prior.empty())
       return true;
     ITfRange *tail = nullptr;
     if (FAILED(sel->Clone(&tail)))
-      return false;
-    LONG number = (LONG)std::min<size_t>(16, prior.size()), moved = 0;
-    wchar_t text[16];
+      return std::nullopt;
+    LONG moved = 0;
+    wchar_t text[32];
     ULONG read = 0;
-    bool ok = SUCCEEDED(tail->ShiftStart(ec, -number, &moved, nullptr)) &&
-              moved == -number &&
-              SUCCEEDED(tail->GetText(ec, 0, text, number, &read)) &&
-              prior.compare(prior.size() - number, number, text, read) == 0;
+    bool ok = SUCCEEDED(tail->ShiftStart(ec, -32, &moved, nullptr)) &&
+              SUCCEEDED(tail->GetText(ec, 0, text, 32, &read));
     tail->Release();
-    return ok;
+    if (!ok)
+      return std::nullopt;
+    return matchesCaretText(prior, std::wstring(text, read));
   }
   void track(ITfContext *ctx, ITfRange *sel) {
     if (context != ctx) {
@@ -292,9 +299,13 @@ class Service final : public ITfTextInputProcessor,
     }
     ITfDocumentMgr *doc = nullptr;
     ITfContext *focused = nullptr;
-    if (SUCCEEDED(manager->GetFocus(&doc)) && doc) {
-      doc->GetTop(&focused);
+    if (FAILED(manager->GetFocus(&doc)))
+      return;
+    if (doc) {
+      HRESULT hr = doc->GetTop(&focused);
       doc->Release();
+      if (FAILED(hr))
+        return;
     }
     bool active = focused && focused == context;
     release(focused);
@@ -310,12 +321,16 @@ class Service final : public ITfTextInputProcessor,
       if (FAILED(
               ctx->GetSelection(ec, TF_DEFAULT_SELECTION, 1, &sel, &count)) ||
           !count) {
+        return;
+      }
+      auto same = sameCaret(sel.range, ec);
+      if (secure(ctx, sel.range, ec) || same == false) {
+        sel.range->Release();
         clearAll();
         return;
       }
-      if (!sameCaret(sel.range, ec) || secure(ctx, sel.range, ec)) {
+      if (!same.has_value()) {
         sel.range->Release();
-        clearAll();
         return;
       }
       if (due && GetTickCount64() >= due) {
@@ -332,7 +347,7 @@ class Service final : public ITfTextInputProcessor,
           mode = stream->mode;
           completed = stream->done && next.empty();
         }
-        if (words != next) {
+        if (words != next || (!next.empty() && !IsWindowVisible(popup))) {
           words = next;
           paint(sel.range, ec);
         }
@@ -390,7 +405,7 @@ class Service final : public ITfTextInputProcessor,
   }
   bool key(ITfContext *ctx, ITfRange *sel, TfEditCookie ec, WPARAM vk,
            LPARAM flags) {
-    if (context != ctx || (anchor && !sameCaret(sel, ec)))
+    if (context != ctx || (anchor && !sameCaret(sel, ec).value_or(false)))
       clearAll();
     if (secure(ctx, sel, ec) || !wants(vk, flags)) {
       clearAll();
@@ -424,7 +439,7 @@ class Service final : public ITfTextInputProcessor,
       }
       if (branch) {
         stream->cancelled = true;
-        stream = predict(question, accepted, mode, limits);
+        stream = predict(question, accepted, mode, limits, words[n]);
         words.clear();
       } else {
         std::lock_guard<std::mutex> guard(stream->lock);
@@ -580,6 +595,12 @@ public:
   HRESULT STDMETHODCALLTYPE OnTestKeyDown(ITfContext *ctx, WPARAM vk, LPARAM lp,
                                           BOOL *eaten) override {
     *eaten = FALSE;
+    if (selectionKey == vk && context == ctx && (lp & (1L << 30))) {
+      *eaten = TRUE;
+      return S_OK;
+    }
+    if (vk == VK_SHIFT || vk == VK_CONTROL || vk == VK_MENU)
+      return S_OK;
     if (!wants(vk, lp)) {
       clearAll();
       return S_OK;
@@ -589,7 +610,7 @@ public:
       ULONG n = 0;
       if (SUCCEEDED(ctx->GetSelection(ec, TF_DEFAULT_SELECTION, 1, &sel, &n)) &&
           n) {
-        if (context != ctx || (anchor && !sameCaret(sel.range, ec)))
+        if (context != ctx || (anchor && !sameCaret(sel.range, ec).value_or(false)))
           clearAll();
         *eaten = !secure(ctx, sel.range, ec) && wants(vk, lp);
         sel.range->Release();
@@ -600,25 +621,37 @@ public:
   HRESULT STDMETHODCALLTYPE OnKeyDown(ITfContext *ctx, WPARAM vk, LPARAM lp,
                                       BOOL *eaten) override {
     *eaten = FALSE;
+    if (selectionKey == vk && context == ctx && (lp & (1L << 30))) {
+      *eaten = TRUE;
+      return S_OK;
+    }
+    selectionKey = 0;
     edit(ctx, TF_ES_READWRITE, [&](TfEditCookie ec) {
       TF_SELECTION sel{};
       ULONG n = 0;
       if (SUCCEEDED(ctx->GetSelection(ec, TF_DEFAULT_SELECTION, 1, &sel, &n)) &&
           n) {
+        bool selecting = !words.empty() &&
+                         (vk == VK_TAB || vk == VK_SPACE ||
+                          (vk >= '1' && vk <= '9'));
         *eaten = key(ctx, sel.range, ec, vk, lp);
+        if (*eaten && selecting)
+          selectionKey = vk;
         sel.range->Release();
       }
     });
     return S_OK;
   }
-  HRESULT STDMETHODCALLTYPE OnTestKeyUp(ITfContext *, WPARAM, LPARAM,
+  HRESULT STDMETHODCALLTYPE OnTestKeyUp(ITfContext *, WPARAM vk, LPARAM,
                                         BOOL *e) override {
-    *e = FALSE;
+    *e = vk == selectionKey;
     return S_OK;
   }
-  HRESULT STDMETHODCALLTYPE OnKeyUp(ITfContext *, WPARAM, LPARAM,
+  HRESULT STDMETHODCALLTYPE OnKeyUp(ITfContext *, WPARAM vk, LPARAM,
                                     BOOL *e) override {
-    *e = FALSE;
+    *e = vk == selectionKey;
+    if (*e)
+      selectionKey = 0;
     return S_OK;
   }
   HRESULT STDMETHODCALLTYPE OnPreservedKey(ITfContext *, REFGUID,
@@ -631,9 +664,10 @@ public:
       clearAll();
     return S_OK;
   }
-  HRESULT STDMETHODCALLTYPE OnSetFocus(ITfDocumentMgr *,
-                                       ITfDocumentMgr *) override {
-    clearAll();
+  HRESULT STDMETHODCALLTYPE OnSetFocus(ITfDocumentMgr *focused,
+                                       ITfDocumentMgr *previous) override {
+    if (focused != previous)
+      clearAll();
     return S_OK;
   }
   HRESULT STDMETHODCALLTYPE OnInitDocumentMgr(ITfDocumentMgr *) override {
@@ -642,12 +676,19 @@ public:
   HRESULT STDMETHODCALLTYPE OnUninitDocumentMgr(ITfDocumentMgr *) override {
     return S_OK;
   }
-  HRESULT STDMETHODCALLTYPE OnPushContext(ITfContext *) override {
-    clearAll();
+  HRESULT STDMETHODCALLTYPE OnPushContext(ITfContext *pushed) override {
+    ITfDocumentMgr *owner = nullptr;
+    ITfDocumentMgr *other = nullptr;
+    if (context && context != pushed && SUCCEEDED(context->GetDocumentMgr(&owner)) &&
+        SUCCEEDED(pushed->GetDocumentMgr(&other)) && owner == other)
+      clearAll();
+    release(other);
+    release(owner);
     return S_OK;
   }
-  HRESULT STDMETHODCALLTYPE OnPopContext(ITfContext *) override {
-    clearAll();
+  HRESULT STDMETHODCALLTYPE OnPopContext(ITfContext *popped) override {
+    if (popped == context)
+      clearAll();
     return S_OK;
   }
 };

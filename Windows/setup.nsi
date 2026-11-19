@@ -2,7 +2,7 @@ Unicode true
 !include "MUI2.nsh"
 !include "x64.nsh"
 Name "语句拼音"
-OutFile "../dist/Yuju-Setup-Windows-x64.exe"
+OutFile "..\dist\Yuju-Setup-Windows-x64.exe"
 InstallDir "$PROGRAMFILES64\YujuInput"
 RequestExecutionLevel admin
 SetCompressor /SOLID lzma
@@ -13,7 +13,7 @@ ShowInstDetails show
 !insertmacro MUI_UNPAGE_CONFIRM
 !insertmacro MUI_UNPAGE_INSTFILES
 !insertmacro MUI_LANGUAGE "SimpChinese"
-!define VERSION "1.1.0"
+!define VERSION "1.1.1"
 !define RUNTIME "$INSTDIR\${VERSION}"
 !macro RemoveRuntime ROOT
   Delete /REBOOTOK "${ROOT}\YujuIME.dll"
@@ -35,13 +35,13 @@ Section
   SetRegView 64
   SetShellVarContext all
   SetOutPath "${RUNTIME}"
-  File "${PAYLOAD}/YujuIME.dll"
-  File "${PAYLOAD}/YujuSettings.exe"
-  File "${PAYLOAD}/rime.dll"
+  File "${PAYLOAD}\YujuIME.dll"
+  File "${PAYLOAD}\YujuSettings.exe"
+  File "${PAYLOAD}\rime.dll"
   SetOutPath "${RUNTIME}\Rime\build"
-  File "${PAYLOAD}/Rime/build/*"
+  File "${PAYLOAD}\Rime\build\*"
   SetOutPath "$INSTDIR\Licenses"
-  File "../Resources/Licenses/*"
+  File "..\Resources\Licenses\*"
   SetOutPath "$INSTDIR"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
   WriteRegStr HKLM "Software\Microsoft\Windows\CurrentVersion\Uninstall\YujuInput" "DisplayName" "语句拼音"

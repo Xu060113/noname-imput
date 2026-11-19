@@ -32,6 +32,30 @@ int main() {
   assert(characterCount(L"中🙂！") == 3);
   assert(characterCount(std::wstring{wchar_t(0xd83d), wchar_t(0xde00)}) == 1);
 
+  const std::wstring question = L"什么是数据库";
+  auto committed = question + L"\r\n数据库";
+  for (auto newline : {L"\r\n", L"\n", L"\r"}) {
+    assert(matchesCaretText(committed, L"较早的文字" + question + newline + L"数据库"));
+    assert(!matchesCaretText(committed, question + newline + L"数据"));
+    assert(!matchesCaretText(committed, question + newline + L"数据库。"));
+  }
+  assert(matchesCaretText(std::wstring(18, L'\n'), std::wstring(16, L'\r')));
+  assert(!matchesCaretText(committed, L"数据库"));
+
+  PredictionBudget greeting(24, L"你好", L"", "continuation");
+  assert(greeting.next({L"你好"}).words.empty() && greeting.canContinue());
+  assert(greeting.next({L"，", L"呀"}).words.front() == L"，");
+
+  PredictionBudget database(80, question, L"", "answer");
+  assert(database.next({L"数据库"}).words.front() == L"数据库");
+  assert(database.next({L"数据库"}).words.empty() && database.canContinue());
+  assert(database.next({L"是", L"通常"}).words.front() == L"是");
+
+  PredictionBudget restarted(80, question, L"关系型数据库", "answer", L"数据库");
+  auto alternatives = restarted.next({L"数据库", L"可以", L"用于"});
+  assert(alternatives.firstIsBranch && alternatives.words.front() == L"可以");
+  assert(!restarted.canContinue());
+
   for (unsigned limit : {8u, 24u, 80u, 300u}) {
     PredictionBudget longAnswer(limit, L"原问题不占长度", L"", "answer");
     for (unsigned i=0; i<limit; ++i) {

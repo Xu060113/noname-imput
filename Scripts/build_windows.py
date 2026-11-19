@@ -72,13 +72,16 @@ def main():
     # Each TSF host owns a Rime engine. Use the bundled dictionaries without opening
     # a shared writable LevelDB from several applications at once.
     schema = compiled / "yuju_pinyin.schema.yaml"
-    schema.write_text(schema.read_text(encoding="utf-8").replace("translator:\n", "translator:\n  enable_user_dict: false\n"), encoding="utf-8")
+    setting = "  enable_user_dict: false\n"
+    schema_text = schema.read_text(encoding="utf-8").replace(setting, "")
+    schema.write_text(schema_text.replace("\ntranslator:\n", "\ntranslator:\n" + setting, 1), encoding="utf-8")
     assert (compiled / "yuju.table.bin").stat().st_size > 100000
     env = os.environ.copy()
     if (nsis.parent.parent / "share/nsis").is_dir():
         env["NSISDIR"] = str(nsis.parent.parent / "share/nsis")
     switch = "/" if os.name == "nt" else "-"
-    run([nsis, switch + "V2", switch + "DPAYLOAD=" + str(PAYLOAD), "Windows/setup.nsi"], env=env)
+    run([nsis, switch + "INPUTCHARSET", "UTF8", switch + "V2",
+         switch + "DPAYLOAD=" + str(PAYLOAD), "Windows/setup.nsi"], env=env)
     print(ROOT / "dist/Yuju-Setup-Windows-x64.exe")
 
 
