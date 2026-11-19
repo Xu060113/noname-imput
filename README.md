@@ -7,9 +7,9 @@
 | 平台 | 适用系统 | 下载 |
 | --- | --- | --- |
 | macOS | macOS 13 及以上，Apple 芯片或 Intel | [Mac 安装包（ZIP）](https://github.com/Xu060113/noname-imput/releases/download/v1.0.0/Yuju-macOS-universal.zip) |
-| Windows | Windows 10 或 11，Intel／AMD x64 桌面应用 | [Windows 安装程序（EXE）](https://github.com/Xu060113/noname-imput/releases/download/v1.1.1/Yuju-Setup-Windows-x64.exe) |
+| Windows | Windows 10 或 11，Intel／AMD x64 桌面应用 | [Windows 安装程序（EXE）](https://github.com/Xu060113/noname-imput/releases/download/v1.1.2/Yuju-Setup-Windows-x64.exe) |
 
-需要自行构建时，可以下载包含两端代码、词典和测试的[完整源码包](https://github.com/Xu060113/noname-imput/releases/download/v1.1.1/Yuju-Source.zip)。
+需要自行构建时，可以下载包含两端代码、词典和测试的[完整源码包](https://github.com/Xu060113/noname-imput/releases/download/v1.1.2/Yuju-Source.zip)。
 
 ## 试着输入一句话
 
@@ -56,7 +56,7 @@ Windows 版使用原生 TSF 组件，面向 x64 桌面应用。设置按用户�
 
 ## 项目内容
 
-v1.0.0 已在 Mac 上验证真实拼音词库、英文空格与模拟流式回答。Windows v1.1.1 的回归测试覆盖问答换行后的光标检查、重复候选、备选分支、回答与续写长度和英文空格计数。
+v1.0.0 已在 Mac 上验证真实拼音词库、英文空格与模拟流式回答。Windows v1.1.2 的回归测试覆盖问答换行后的光标检查、重复候选、备选分支、回答与续写长度和英文空格计数。`Tests/WindowsCandidates.cpp` 在临时 Windows RichEdit 窗口中通过 TSF 驱动已安装的输入法，使用控制后台配置的 DeepSeek 服务。默认样例为「什么是数据库」，传入 `greeting` 可测试「你好」上屏后停顿再按数字选词。
 
 `Sources` 为 Mac 实现，`Windows` 为 TSF、WinHTTP、设置和安装器源码，`Resources/Rime` 为共享方案和词典，`Tests` 为固定响应与在线检查。模型为 `deepseek-flash`，通过 `https://api.deepseek.com/chat/completions` 流式调用，关闭思考模式。英文空格、问答换行和各候选的实际文字均由输入法在确认后提交。
 

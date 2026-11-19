@@ -86,7 +86,7 @@ public:
                    const std::wstring &lastAccepted = L"")
       : preceding(accepted.empty() && mode == "continuation" ? input
                                                              : accepted),
-        lastWord(accepted.empty() && mode == "continuation" ? input : lastAccepted),
+        lastWord(accepted.empty() ? input : lastAccepted),
         remaining(limit - std::min<size_t>(limit, characterCount(accepted))) {}
 
   bool canContinue() const { return remaining > 0; }

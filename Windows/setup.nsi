@@ -13,7 +13,7 @@ ShowInstDetails show
 !insertmacro MUI_UNPAGE_CONFIRM
 !insertmacro MUI_UNPAGE_INSTFILES
 !insertmacro MUI_LANGUAGE "SimpChinese"
-!define VERSION "1.1.1"
+!define VERSION "1.1.2"
 !define RUNTIME "$INSTDIR\${VERSION}"
 !macro RemoveRuntime ROOT
   Delete /REBOOTOK "${ROOT}\YujuIME.dll"

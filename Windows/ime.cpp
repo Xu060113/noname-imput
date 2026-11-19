@@ -278,11 +278,24 @@ class Service final : public ITfTextInputProcessor,
                  SWP_NOACTIVATE | SWP_SHOWWINDOW);
     InvalidateRect(popup, nullptr, TRUE);
   }
-  bool insert(ITfContext *ctx, ITfRange *sel, TfEditCookie ec,
+  bool insert(ITfContext *ctx, ITfRange *&sel, TfEditCookie ec,
               const std::wstring &s) {
-    if (FAILED(sel->SetText(ec, 0, s.data(), (LONG)s.size())))
+    ITfInsertAtSelection *inserter = nullptr;
+    if (FAILED(ctx->QueryInterface(IID_PPV_ARGS(&inserter))))
       return false;
-    sel->Collapse(ec, TF_ANCHOR_END);
+    ITfRange *inserted = nullptr;
+    HRESULT hr = inserter->InsertTextAtSelection(ec, 0, s.data(), (LONG)s.size(), &inserted);
+    inserter->Release();
+    if (FAILED(hr) || !inserted)
+      return false;
+    // Use the text store's post-insertion range. An empty pre-edit range
+    // can remain before the new paragraph in RichEdit.
+    if (FAILED(inserted->Collapse(ec, TF_ANCHOR_END))) {
+      inserted->Release();
+      return false;
+    }
+    sel->Release();
+    sel = inserted;
     TF_SELECTION cursor{sel, {TF_AE_NONE, FALSE}};
     if (FAILED(ctx->SetSelection(ec, 1, &cursor)))
       return false;
@@ -403,7 +416,7 @@ class Service final : public ITfTextInputProcessor,
     return (ch >= 'a' && ch <= 'z') ||
            (ch > 0 && ch < 128 && strchr(",.?!:;()[]/", ch));
   }
-  bool key(ITfContext *ctx, ITfRange *sel, TfEditCookie ec, WPARAM vk,
+  bool key(ITfContext *ctx, ITfRange *&sel, TfEditCookie ec, WPARAM vk,
            LPARAM flags) {
     if (context != ctx || (anchor && !sameCaret(sel, ec).value_or(false)))
       clearAll();
@@ -422,7 +435,7 @@ class Service final : public ITfTextInputProcessor,
           words[n],
           accepted.empty() ? (mode == "answer" ? L"" : question) : accepted);
       if (!insert(ctx, sel, ec,
-                  (accepted.empty() && mode == "answer" ? L"\r\n" : L"") +
+                  (accepted.empty() && mode == "answer" ? L"\r" : L"") +
                       word)) {
         clearAll();
         return false;

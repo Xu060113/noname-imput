@@ -45,6 +45,8 @@ int main() {
   PredictionBudget greeting(24, L"你好", L"", "continuation");
   assert(greeting.next({L"你好"}).words.empty() && greeting.canContinue());
   assert(greeting.next({L"，", L"呀"}).words.front() == L"，");
+  PredictionBudget greetingReply(80, L"你好", L"", "answer");
+  assert(greetingReply.next({L"你好"}).words.empty() && greetingReply.canContinue());
 
   PredictionBudget database(80, question, L"", "answer");
   assert(database.next({L"数据库"}).words.front() == L"数据库");
