@@ -39,8 +39,8 @@ inline void runModel(std::shared_ptr<Stream> stream, const std::string &input,
     user["mode"] = mode;
   std::string prompt =
       u8"你是逐词输入法引擎。input是用户原文，accepted是已上屏前缀，不要重复。"
-      u8"若未给定mode，独立问题即使无问号也用answer简洁回答，半句用continuation"
-      u8"自然续写。遵循原文语言。仅输出NDJSON。首行是{\"mode\":\"answer\"}或{"
+      u8"若未给定mode，独立问题即使无问号也用answer回答；问候语（例如你好）和半句用continuation"
+      u8"自然续写，不复述问候。遵循原文语言。仅输出NDJSON。首行是{\"mode\":\"answer\"}或{"
       u8"\"mode\":\"continuation\"}"
       u8"。随后每行是含1到3个互异的下一个词的JSON数组，尽量给备选；之后每行均基"
       u8"于上一行首选。按以下长度偏好组织内容，并在限制内自然收尾。例：[ "
@@ -59,6 +59,16 @@ inline void runModel(std::shared_ptr<Stream> stream, const std::string &input,
   if (used >= limit)
     return;
   user["accepted_characters"] = used;
+  user["answer_target_characters"] = limits.answerTarget();
+  if (mode == "answer" && !accepted.empty()) {
+    user["remaining_characters"] = limit - used;
+    prompt += u8"这是同一篇回答的中途续写。若accepted已经给出定义，不再定义术语；"
+              u8"从尚未涉及的角度接下去，例如一个具体例子、机制或使用条件。"
+              u8"先补齐未完句子或标点；只输出新增词语，已有内容计入目标篇幅。";
+  }
+  prompt += u8"回答模式请围绕问题组织接近上限的完整回答，目标至少达到 answer_target_characters 个字符。"
+            u8"上限较大时分几句解释原理、例子或用途。每行给一个短词或短语的候选。"
+            u8"已给accepted时从末尾接着写，必要时另起一句补充新信息，不重述已有内容。";
   auto body =
       json{{"model", "deepseek-flash"},
            {"stream", true},
@@ -132,16 +142,23 @@ inline void runModel(std::shared_ptr<Stream> stream, const std::string &input,
         tokens.erase(0, boundary + 1);
         if (record.find_first_not_of(" \t\r") == std::string::npos)
           continue;
+        auto first = record.find_first_not_of(" \t\r");
+        if (record.compare(first, 3, "```") == 0)
+          continue;
         auto frame = json::parse(record);
         std::lock_guard<std::mutex> guard(stream->lock);
         if (!budget) {
-          auto m = frame.at("mode").get<std::string>();
+          bool header = frame.is_object() && frame.contains("mode");
+          auto m = header ? frame.at("mode").get<std::string>() : mode;
           if (m != "answer" && m != "continuation")
             return;
           stream->mode = mode.empty() ? m : mode;
           budget.emplace(limits.forMode(stream->mode), wide(input),
                          acceptedText, stream->mode, lastAccepted);
-        } else if (frame.is_array() && frame.size() >= 1 && frame.size() <= 3 &&
+          if (header)
+            continue;
+        }
+        if (frame.is_array() && frame.size() >= 1 && frame.size() <= 3 &&
                    ++rowCount <= 512) {
           std::vector<std::wstring> words;
           for (auto &entry : frame) {

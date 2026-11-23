@@ -16,6 +16,10 @@ struct LengthLimits {
   unsigned forMode(const std::string &mode) const {
     return mode == "answer" ? answer : continuation;
   }
+  unsigned answerTarget() const { return answer * 3 / 4; }
+  bool needsMoreAnswer(const std::string &mode, size_t used, size_t requestStart) const {
+    return mode == "answer" && used > requestStart && used < answerTarget();
+  }
 };
 
 // Count Unicode scalar values. The initial answer line break is inserted by the
@@ -70,7 +74,14 @@ inline std::wstring caretSuffix(const std::wstring &text) {
 
 inline bool matchesCaretText(const std::wstring &prior, const std::wstring &actual) {
   auto expected = caretSuffix(prior);
-  return caretSuffix(actual).compare(0, expected.size(), expected) == 0;
+  auto observed = caretSuffix(actual);
+  if (observed.compare(0, expected.size(), expected) == 0)
+    return true;
+  // A single-line text store may convert an inserted paragraph break to a space.
+  for (size_t i = 0; i < expected.size() && i < observed.size(); ++i)
+    if (expected[i] == L'\n' && observed[i] == L' ')
+      observed[i] = L'\n';
+  return observed.compare(0, expected.size(), expected) == 0;
 }
 
 // Rows supplied by the model assume its first choice was accepted. If that

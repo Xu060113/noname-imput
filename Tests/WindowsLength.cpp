@@ -41,6 +41,13 @@ int main() {
   }
   assert(matchesCaretText(std::wstring(18, L'\n'), std::wstring(16, L'\r')));
   assert(!matchesCaretText(committed, L"数据库"));
+  assert(matchesCaretText(committed, question + L" 数据库"));
+  assert(!matchesCaretText(committed, question + L"。数据库"));
+  LengthLimits longReply{300, 24};
+  assert(longReply.needsMoreAnswer("answer", 43, 0));
+  assert(!longReply.needsMoreAnswer("answer", 43, 43));
+  assert(!longReply.needsMoreAnswer("answer", 225, 120));
+  assert(!longReply.needsMoreAnswer("continuation", 10, 0));
 
   PredictionBudget greeting(24, L"你好", L"", "continuation");
   assert(greeting.next({L"你好"}).words.empty() && greeting.canContinue());

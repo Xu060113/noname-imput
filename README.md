@@ -7,9 +7,9 @@
 | 平台 | 适用系统 | 下载 |
 | --- | --- | --- |
 | macOS | macOS 13 及以上，Apple 芯片或 Intel | [Mac 安装包（ZIP）](https://github.com/Xu060113/noname-imput/releases/download/v1.0.0/Yuju-macOS-universal.zip) |
-| Windows | Windows 10 或 11，Intel／AMD x64 桌面应用 | [Windows 安装程序（EXE）](https://github.com/Xu060113/noname-imput/releases/download/v1.1.2/Yuju-Setup-Windows-x64.exe) |
+| Windows | Windows 10 或 11，Intel／AMD x64 桌面应用 | [Windows 安装程序（EXE）](https://github.com/Xu060113/noname-imput/releases/download/v1.1.6/Yuju-Setup-Windows-x64.exe) |
 
-需要自行构建时，可以下载包含两端代码、词典和测试的[完整源码包](https://github.com/Xu060113/noname-imput/releases/download/v1.1.2/Yuju-Source.zip)。
+需要自行构建时，可以下载包含两端代码、词典和测试的[完整源码包](https://github.com/Xu060113/noname-imput/releases/download/v1.1.6/Yuju-Source.zip)。
 
 ## 试着输入一句话
 
@@ -44,7 +44,7 @@
 | 问题回答上限 | 80 个字符 | 8–300 |
 | 语句续写上限 | 24 个字符 | 8–300 |
 
-例如，将回答设为 120、续写设为 16，提问时可以逐词接出较长解释，写半句话时最多补 16 个字符。保存后从下一次预测生效，可以关闭后台继续打字。空格与标点计入上限，原文和答案开头的换行不计。改选其他候选时，已经接受的内容仍计入本次总长度。模型可以提前结束。
+例如，将回答设为 120、续写设为 16，提问时可以逐词接出较长解释，写半句话时最多补 16 个字符。保存后从下一次预测生效，可以关闭后台继续打字。空格与标点计入上限，原文和答案开头的换行不计。改选其他候选时，已经接受的内容仍计入本次总长度。Windows 问答以所设上限的约四分之三到上限为目标。例如设为 300 时，模型用完当前候选且已确认的回答不足 225 字，输入法会按已选内容请求补充。继续按数字或 Tab 可逐词接下去。
 
 Windows 版使用原生 TSF 组件，面向 x64 桌面应用。设置按用户保存，密钥存入 Windows 凭据管理器中的 `Yuju/DeepSeek`。本版安装程序未经 Authenticode 发布者签名。Windows ARM64 原生应用和 32 位应用需要对应架构的输入法组件。
 
@@ -56,7 +56,7 @@ Windows 版使用原生 TSF 组件，面向 x64 桌面应用。设置按用户�
 
 ## 项目内容
 
-v1.0.0 已在 Mac 上验证真实拼音词库、英文空格与模拟流式回答。Windows v1.1.2 的回归测试覆盖问答换行后的光标检查、重复候选、备选分支、回答与续写长度和英文空格计数。`Tests/WindowsCandidates.cpp` 在临时 Windows RichEdit 窗口中通过 TSF 驱动已安装的输入法，使用控制后台配置的 DeepSeek 服务。默认样例为「什么是数据库」，传入 `greeting` 可测试「你好」上屏后停顿再按数字选词。
+v1.0.0 已在 Mac 上验证真实拼音词库、英文空格与模拟流式回答。Windows v1.1.6 的回归测试覆盖问答换行后的光标检查、重复候选、备选分支、回答与续写长度和英文空格计数。`Tests/WindowsCandidates.cpp` 在临时 Windows RichEdit 窗口中通过 TSF 驱动已安装的输入法，使用控制后台配置的 DeepSeek 服务。默认样例为「什么是数据库」，传入 `greeting` 可测试「你好」上屏后停顿再按数字选词。传入 `single` 可测试单行输入，传入 `long` 会沿首选一路确认，校验每次上屏的词并统计整段回答的字符数。
 
 `Sources` 为 Mac 实现，`Windows` 为 TSF、WinHTTP、设置和安装器源码，`Resources/Rime` 为共享方案和词典，`Tests` 为固定响应与在线检查。模型为 `deepseek-flash`，通过 `https://api.deepseek.com/chat/completions` 流式调用，关闭思考模式。英文空格、问答换行和各候选的实际文字均由输入法在确认后提交。
 

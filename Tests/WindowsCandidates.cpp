@@ -7,6 +7,7 @@
 #include <richedit.h>
 #include <cstdio>
 #include <string>
+#include "../Windows/common.hpp"
 
 static void pumpMessages(unsigned duration) {
   auto until = GetTickCount64() + duration;
@@ -58,7 +59,15 @@ static bool press(ITfKeystrokeMgr *keyboard, int key) {
   return true;
 }
 
-static bool checkInput(HWND editor, ITfKeystrokeMgr *keyboard, bool greeting) {
+static std::wstring firstWord(HWND popup) {
+  auto label = textOf(popup);
+  constexpr size_t prefix = 5; // "   1 "
+  if (label.compare(0, prefix, L"   1 ") != 0)
+    return {};
+  return label.substr(prefix, label.find(L"   2 ", prefix) - prefix);
+}
+
+static bool checkInput(HWND editor, ITfKeystrokeMgr *keyboard, bool greeting, bool longAnswer) {
   for (int letter : std::string(greeting ? "NIHAO" : "SHENMESHISHUJUKU"))
     if (!press(keyboard, letter))
       return false;
@@ -79,19 +88,44 @@ static bool checkInput(HWND editor, ITfKeystrokeMgr *keyboard, bool greeting) {
     return result.size() > 2 && result.compare(0, 2, L"你好") == 0 &&
            result.find(L"你好", 2) == std::wstring::npos;
   }
+  auto firstChoice = firstWord(first);
   if (!press(keyboard, '1'))
     return false;
   auto answer = textOf(editor);
+  auto start = answer.find_first_not_of(L"\r\n ", std::wstring(L"什么是数据库").size());
+  if (start == std::wstring::npos || answer.substr(start) != firstChoice)
+    return false;
+  pumpMessages(100);
   HWND second = waitForCandidates();
   if (!second)
     return false;
   auto row = textOf(second);
+  auto choice = firstWord(second);
   pumpMessages(2200);
   if (!visibleCandidates() || textOf(second) != row || textOf(editor) != answer ||
       !press(keyboard, '1'))
     return false;
   auto extended = textOf(editor);
-  return extended.size() > answer.size() && extended.compare(0, answer.size(), answer) == 0;
+  if (extended != answer + choice)
+    return false;
+  if (!longAnswer)
+    return true;
+  const auto limits = readLengthLimits();
+  for (unsigned i = 0; i < limits.answer; ++i) {
+    pumpMessages(100);
+    HWND next = waitForCandidates();
+    if (!next)
+      break;
+    choice = firstWord(next);
+    if (choice.empty() || !press(keyboard, '1'))
+      return false;
+    extended += choice;
+    if (textOf(editor) != extended)
+      return false;
+  }
+  size_t length = characterCount(extended.substr(start));
+  std::printf("Committed %zu characters, configured maximum %u\n", length, limits.answer);
+  return length >= limits.answerTarget() && length <= limits.answer;
 }
 
 int main(int argc, char **argv) {
@@ -107,13 +141,22 @@ int main(int argc, char **argv) {
     return 1;
   HWND frame = CreateWindowW(L"STATIC", L"语句拼音 · 临时选词测试", WS_OVERLAPPEDWINDOW | WS_VISIBLE,
                              180, 180, 480, 200, nullptr, nullptr, instance, nullptr);
-  HWND editor = CreateWindowW(MSFTEDIT_CLASS, L"", WS_CHILD | WS_VISIBLE | ES_MULTILINE | WS_BORDER,
+  std::string scenario = argc > 1 ? argv[1] : "question";
+  DWORD style = scenario == "single" ? ES_AUTOHSCROLL : ES_MULTILINE | ES_AUTOVSCROLL | WS_VSCROLL;
+  HWND editor = CreateWindowW(MSFTEDIT_CLASS, L"", WS_CHILD | WS_VISIBLE | style | WS_BORDER,
                               8, 10, 440, 120, frame, nullptr, instance, nullptr);
   if (!editor)
     return 1;
   SendMessageW(editor, EM_SETEDITSTYLE, SES_USECTF, SES_USECTF);
+  DWORD foregroundThread = GetWindowThreadProcessId(GetForegroundWindow(), nullptr);
+  DWORD testThread = GetCurrentThreadId();
+  bool attached = foregroundThread && foregroundThread != testThread &&
+                  AttachThreadInput(testThread, foregroundThread, TRUE);
   SetForegroundWindow(frame);
+  SetActiveWindow(frame);
   SetFocus(editor);
+  if (attached)
+    AttachThreadInput(testThread, foregroundThread, FALSE);
   pumpMessages(300);
   ITfInputProcessorProfileMgr *profiles = nullptr;
   ITfKeystrokeMgr *keyboard = nullptr;
@@ -126,7 +169,11 @@ int main(int argc, char **argv) {
   if (FAILED(profiles->ActivateProfile(TF_PROFILETYPE_INPUTPROCESSOR, 0x0804, service, profile, nullptr, 0x10000004)))
     return 1;
   pumpMessages(450);
-  bool passed = checkInput(editor, keyboard, argc > 1 && std::string(argv[1]) == "greeting");
+  if (GetForegroundWindow() != frame) {
+    puts("Test window did not acquire keyboard focus");
+    return 2;
+  }
+  bool passed = checkInput(editor, keyboard, scenario == "greeting", scenario == "long");
   keyboard->Release();
   profiles->Release();
   DestroyWindow(frame);

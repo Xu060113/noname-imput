@@ -99,6 +99,8 @@ class Service final : public ITfTextInputProcessor,
   RimeSessionId ime = 0;
   bool restricted = false;
   std::wstring prior, raw, question, accepted;
+  std::wstring lastAccepted;
+  size_t requestStart = 0;
   std::string mode;
   LengthLimits limits;
   std::vector<std::wstring> words;
@@ -113,6 +115,10 @@ class Service final : public ITfTextInputProcessor,
     if (msg == WM_TIMER && wp == 1 && self) {
       if (self->due || self->stream)
         self->poll();
+      return 0;
+    }
+    if (msg == WM_APP + 1 && self) {
+      self->refreshPopup();
       return 0;
     }
     if (msg == WM_NCHITTEST)
@@ -144,6 +150,8 @@ class Service final : public ITfTextInputProcessor,
     words.clear();
     question.clear();
     accepted.clear();
+    lastAccepted.clear();
+    requestStart = 0;
     mode.clear();
     if (popup) {
       KillTimer(popup, 1);
@@ -278,13 +286,38 @@ class Service final : public ITfTextInputProcessor,
                  SWP_NOACTIVATE | SWP_SHOWWINDOW);
     InvalidateRect(popup, nullptr, TRUE);
   }
+  void refreshPopup() {
+    if (!context || (raw.empty() && words.empty()))
+      return;
+    auto ctx = context;
+    ctx->AddRef();
+    edit(ctx, TF_ES_READ, [&](TfEditCookie ec) {
+      TF_SELECTION sel{};
+      ULONG count = 0;
+      if (SUCCEEDED(ctx->GetSelection(ec, TF_DEFAULT_SELECTION, 1, &sel, &count)) && count) {
+        if (ctx == context)
+          paint(sel.range, ec);
+        sel.range->Release();
+      }
+    });
+    ctx->Release();
+  }
+  void schedulePaint() {
+    if (raw.empty() && words.empty())
+      ShowWindow(popup, SW_HIDE);
+    else
+      PostMessageW(popup, WM_APP + 1, 0, 0);
+  }
   bool insert(ITfContext *ctx, ITfRange *&sel, TfEditCookie ec,
               const std::wstring &s) {
     ITfInsertAtSelection *inserter = nullptr;
     if (FAILED(ctx->QueryInterface(IID_PPV_ARGS(&inserter))))
       return false;
     ITfRange *inserted = nullptr;
-    HRESULT hr = inserter->InsertTextAtSelection(ec, 0, s.data(), (LONG)s.size(), &inserted);
+    // Rime and AI candidates are already confirmed. Starting a composition
+    // here can cause a web editor to apply a multiline candidate twice.
+    HRESULT hr = inserter->InsertTextAtSelection(ec, TF_IAS_NO_DEFAULT_COMPOSITION,
+                                                s.data(), (LONG)s.size(), &inserted);
     inserter->Release();
     if (FAILED(hr) || !inserted)
       return false;
@@ -364,8 +397,15 @@ class Service final : public ITfTextInputProcessor,
           words = next;
           paint(sel.range, ec);
         }
-        if (completed)
-          clearPrediction();
+        if (completed) {
+          size_t used = characterCount(accepted);
+          if (limits.needsMoreAnswer(mode, used, requestStart)) {
+            requestStart = used;
+            stream = predict(question, accepted, mode, limits, lastAccepted);
+          } else {
+            clearPrediction();
+          }
+        }
       }
       sel.range->Release();
     });
@@ -434,13 +474,21 @@ class Service final : public ITfTextInputProcessor,
       std::wstring word = spaced(
           words[n],
           accepted.empty() ? (mode == "answer" ? L"" : question) : accepted);
+      // RichEdit represents a paragraph as CR. Browser text stores use LF
+      // and synchronize their document offsets with the renderer after commit.
+      wchar_t windowClass[64]{};
+      GetClassNameW(GetFocus(), windowClass, 64);
+      const wchar_t *separator = wcsncmp(windowClass, L"Chrome_", 7) == 0 ? L"\n" : L"\r";
+      if ((!_wcsicmp(windowClass, L"Edit") || !_wcsnicmp(windowClass, L"RichEdit", 8)) &&
+          !(GetWindowLongPtrW(GetFocus(), GWL_STYLE) & ES_MULTILINE))
+        separator = L" ";
       if (!insert(ctx, sel, ec,
-                  (accepted.empty() && mode == "answer" ? L"\r" : L"") +
-                      word)) {
+                  (accepted.empty() && mode == "answer" ? separator : L"") + word)) {
         clearAll();
         return false;
       }
       accepted += word;
+      lastAccepted = words[n];
       if (characterCount(accepted) >= limits.forMode(mode)) {
         clearPrediction();
         return true;
@@ -452,15 +500,17 @@ class Service final : public ITfTextInputProcessor,
       }
       if (branch) {
         stream->cancelled = true;
-        stream = predict(question, accepted, mode, limits, words[n]);
+        requestStart = characterCount(accepted);
+        stream = predict(question, accepted, mode, limits, lastAccepted);
         words.clear();
       } else {
         std::lock_guard<std::mutex> guard(stream->lock);
         stream->rows.pop_front();
-        words = stream->rows.empty() ? std::vector<std::wstring>{}
-                                     : stream->rows.front().words;
       }
-      paint(sel, ec);
+      // The renderer can acknowledge a write after this edit session returns.
+      // Publish the next row only from poll(), after verifying the new caret.
+      words.clear();
+      schedulePaint();
       return true;
     }
     clearPrediction();
@@ -501,7 +551,7 @@ class Service final : public ITfTextInputProcessor,
       due = GetTickCount64() + 600;
       SetTimer(popup, 1, 75, nullptr);
     }
-    paint(sel, ec);
+    schedulePaint();
     return handled;
   }
 
@@ -607,6 +657,8 @@ public:
   }
   HRESULT STDMETHODCALLTYPE OnTestKeyDown(ITfContext *ctx, WPARAM vk, LPARAM lp,
                                           BOOL *eaten) override {
+    if (vk >= VK_NUMPAD0 && vk <= VK_NUMPAD9)
+      vk = '0' + vk - VK_NUMPAD0;
     *eaten = FALSE;
     if (selectionKey == vk && context == ctx && (lp & (1L << 30))) {
       *eaten = TRUE;
@@ -633,6 +685,8 @@ public:
   }
   HRESULT STDMETHODCALLTYPE OnKeyDown(ITfContext *ctx, WPARAM vk, LPARAM lp,
                                       BOOL *eaten) override {
+    if (vk >= VK_NUMPAD0 && vk <= VK_NUMPAD9)
+      vk = '0' + vk - VK_NUMPAD0;
     *eaten = FALSE;
     if (selectionKey == vk && context == ctx && (lp & (1L << 30))) {
       *eaten = TRUE;
@@ -657,11 +711,15 @@ public:
   }
   HRESULT STDMETHODCALLTYPE OnTestKeyUp(ITfContext *, WPARAM vk, LPARAM,
                                         BOOL *e) override {
+    if (vk >= VK_NUMPAD0 && vk <= VK_NUMPAD9)
+      vk = '0' + vk - VK_NUMPAD0;
     *e = vk == selectionKey;
     return S_OK;
   }
   HRESULT STDMETHODCALLTYPE OnKeyUp(ITfContext *, WPARAM vk, LPARAM,
                                     BOOL *e) override {
+    if (vk >= VK_NUMPAD0 && vk <= VK_NUMPAD9)
+      vk = '0' + vk - VK_NUMPAD0;
     *e = vk == selectionKey;
     if (*e)
       selectionKey = 0;
