@@ -7,9 +7,9 @@
 | 平台 | 适用系统 | 下载 |
 | --- | --- | --- |
 | macOS | macOS 13 及以上，Apple 芯片或 Intel | [Mac 安装包（ZIP）](https://github.com/Xu060113/noname-imput/releases/download/v1.0.0/Yuju-macOS-universal.zip) |
-| Windows | Windows 10 或 11，Intel／AMD x64 桌面应用 | [Windows 安装程序（EXE）](https://github.com/Xu060113/noname-imput/releases/download/v1.1.6/Yuju-Setup-Windows-x64.exe) |
+| Windows | Windows 10 或 11，Intel／AMD x64 桌面应用 | [Windows 安装程序（EXE）](https://github.com/Xu060113/noname-imput/releases/download/v1.1.7/Yuju-Setup-Windows-x64.exe) |
 
-需要自行构建时，可以下载包含两端代码、词典和测试的[完整源码包](https://github.com/Xu060113/noname-imput/releases/download/v1.1.6/Yuju-Source.zip)。
+需要自行构建时，可以下载包含两端代码、词典和测试的[完整源码包](https://github.com/Xu060113/noname-imput/releases/download/v1.1.7/Yuju-Source.zip)。
 
 ## 试着输入一句话
 

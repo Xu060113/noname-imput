@@ -48,6 +48,10 @@ int main() {
   assert(!longReply.needsMoreAnswer("answer", 43, 43));
   assert(!longReply.needsMoreAnswer("answer", 225, 120));
   assert(!longReply.needsMoreAnswer("continuation", 10, 0));
+  assert(needsMoreContinuation("continuation", L"很高兴", 0, limits));
+  assert(!needsMoreContinuation("continuation", L"很高兴", 3, limits));
+  assert(!needsMoreContinuation("continuation", L"很高兴。 ", 0, limits));
+  assert(!needsMoreContinuation("continuation", std::wstring(24, L'字'), 0, limits));
 
   PredictionBudget greeting(24, L"你好", L"", "continuation");
   assert(greeting.next({L"你好"}).words.empty() && greeting.canContinue());

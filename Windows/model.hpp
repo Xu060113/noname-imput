@@ -15,6 +15,7 @@ struct Stream {
   std::mutex lock;
   std::deque<CandidateRow> rows;
   std::string mode;
+  bool produced = false;
   bool done = false;
 };
 struct InternetHandle {
@@ -60,8 +61,15 @@ inline void runModel(std::shared_ptr<Stream> stream, const std::string &input,
     return;
   user["accepted_characters"] = used;
   user["answer_target_characters"] = limits.answerTarget();
-  if (mode == "answer" && !accepted.empty()) {
+  if (!accepted.empty()) {
     user["remaining_characters"] = limit - used;
+    prompt += u8"用户刚确认了accepted末尾的候选，要继续从这个分支生成。"
+              u8"首个候选必须是接在accepted后面的新词。若剩余空间够，请给出多行，"
+              u8"每行只放下一小段，不要在第一行就结束。";
+  } else {
+    prompt += u8"问候后的续写应接出简短的下一句话，按词分成多行，避免只输出感叹号。";
+  }
+  if (mode == "answer" && !accepted.empty()) {
     prompt += u8"这是同一篇回答的中途续写。若accepted已经给出定义，不再定义术语；"
               u8"从尚未涉及的角度接下去，例如一个具体例子、机制或使用条件。"
               u8"先补齐未完句子或标点；只输出新增词语，已有内容计入目标篇幅。";
@@ -125,15 +133,19 @@ inline void runModel(std::shared_ptr<Stream> stream, const std::string &input,
       if (line.rfind("data:", 0) != 0)
         continue;
       auto data = line.substr(5);
-      if (data.find("[DONE]") != std::string::npos)
-        return;
-      auto packet = json::parse(data);
-      if (packet.at("choices").empty())
-        continue;
-      auto delta = packet["choices"][0].at("delta");
-      if (!delta.contains("content") || !delta["content"].is_string())
-        continue;
-      tokens += delta["content"].get<std::string>();
+      const bool finished = data.find_first_not_of(" \t\r") != data.npos &&
+                            data.compare(data.find_first_not_of(" \t\r"), 6, "[DONE]") == 0;
+      if (finished) {
+        tokens += '\n';
+      } else {
+        auto packet = json::parse(data);
+        if (packet.at("choices").empty())
+          continue;
+        auto delta = packet["choices"][0].at("delta");
+        if (!delta.contains("content") || !delta["content"].is_string())
+          continue;
+        tokens += delta["content"].get<std::string>();
+      }
       if (tokens.size() > 32768)
         return;
       size_t boundary;
@@ -171,13 +183,17 @@ inline void runModel(std::shared_ptr<Stream> stream, const std::string &input,
               words.push_back(w);
           }
           auto row = budget->next(words);
-          if (!row.words.empty())
+          if (!row.words.empty()) {
             stream->rows.push_back(std::move(row));
+            stream->produced = true;
+          }
           if (!budget->canContinue())
             return;
         } else
           return;
       }
+      if (finished)
+        return;
     }
   }
 }
@@ -188,9 +204,14 @@ inline std::shared_ptr<Stream> predict(std::wstring text, std::wstring accepted,
   ++moduleUsers;
   std::thread([stream, text = utf8(text), accepted = utf8(accepted), mode,
                limits, lastAccepted = std::move(lastAccepted)] {
-    try {
-      runModel(stream, text, accepted, mode, limits, lastAccepted);
-    } catch (...) {
+    for (int attempt = 0; attempt < 2 && !stream->cancelled; ++attempt) {
+      try {
+        runModel(stream, text, accepted, mode, limits, lastAccepted);
+      } catch (...) {
+      }
+      std::lock_guard<std::mutex> guard(stream->lock);
+      if (accepted.empty() || stream->produced)
+        break;
     }
     {
       std::lock_guard<std::mutex> guard(stream->lock);

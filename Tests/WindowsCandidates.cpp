@@ -59,15 +59,19 @@ static bool press(ITfKeystrokeMgr *keyboard, int key) {
   return true;
 }
 
-static std::wstring firstWord(HWND popup) {
+static std::wstring candidateWord(HWND popup, int key = '1') {
   auto label = textOf(popup);
-  constexpr size_t prefix = 5; // "   1 "
-  if (label.compare(0, prefix, L"   1 ") != 0)
+  auto marker = L"   " + std::wstring(1, wchar_t(key)) + L" ";
+  auto start = label.find(marker);
+  if (start == label.npos)
     return {};
-  return label.substr(prefix, label.find(L"   2 ", prefix) - prefix);
+  start += marker.size();
+  auto end = label.find(L"   " + std::wstring(1, wchar_t(key + 1)) + L" ", start);
+  return label.substr(start, end - start);
 }
 
-static bool checkInput(HWND editor, ITfKeystrokeMgr *keyboard, bool greeting, bool longAnswer) {
+static bool checkInput(HWND editor, ITfKeystrokeMgr *keyboard, const std::string &scenario) {
+  bool greeting = scenario == "greeting";
   for (int letter : std::string(greeting ? "NIHAO" : "SHENMESHISHUJUKU"))
     if (!press(keyboard, letter))
       return false;
@@ -88,19 +92,28 @@ static bool checkInput(HWND editor, ITfKeystrokeMgr *keyboard, bool greeting, bo
     return result.size() > 2 && result.compare(0, 2, L"你好") == 0 &&
            result.find(L"你好", 2) == std::wstring::npos;
   }
-  auto firstChoice = firstWord(first);
-  if (!press(keyboard, '1'))
+  int firstKey = scenario == "branch3" ? '3' : scenario == "branch2" ? '2' : '1';
+  auto firstChoice = candidateWord(first, firstKey);
+  if (firstChoice.empty()) {
+    puts("Model did not offer the requested alternative");
+    return false;
+  }
+  if (!press(keyboard, firstKey))
     return false;
   auto answer = textOf(editor);
   auto start = answer.find_first_not_of(L"\r\n ", std::wstring(L"什么是数据库").size());
   if (start == std::wstring::npos || answer.substr(start) != firstChoice)
     return false;
+  if (firstKey != '1' && (!press(keyboard, firstKey) || textOf(editor) != answer)) {
+    puts("A key pressed while waiting changed the accepted text");
+    return false;
+  }
   pumpMessages(100);
   HWND second = waitForCandidates();
   if (!second)
     return false;
   auto row = textOf(second);
-  auto choice = firstWord(second);
+  auto choice = candidateWord(second);
   pumpMessages(2200);
   if (!visibleCandidates() || textOf(second) != row || textOf(editor) != answer ||
       !press(keyboard, '1'))
@@ -108,7 +121,7 @@ static bool checkInput(HWND editor, ITfKeystrokeMgr *keyboard, bool greeting, bo
   auto extended = textOf(editor);
   if (extended != answer + choice)
     return false;
-  if (!longAnswer)
+  if (scenario != "long")
     return true;
   const auto limits = readLengthLimits();
   for (unsigned i = 0; i < limits.answer; ++i) {
@@ -116,7 +129,7 @@ static bool checkInput(HWND editor, ITfKeystrokeMgr *keyboard, bool greeting, bo
     HWND next = waitForCandidates();
     if (!next)
       break;
-    choice = firstWord(next);
+    choice = candidateWord(next);
     if (choice.empty() || !press(keyboard, '1'))
       return false;
     extended += choice;
@@ -173,7 +186,7 @@ int main(int argc, char **argv) {
     puts("Test window did not acquire keyboard focus");
     return 2;
   }
-  bool passed = checkInput(editor, keyboard, scenario == "greeting", scenario == "long");
+  bool passed = checkInput(editor, keyboard, scenario);
   keyboard->Release();
   profiles->Release();
   DestroyWindow(frame);

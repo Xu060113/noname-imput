@@ -101,6 +101,7 @@ class Service final : public ITfTextInputProcessor,
   std::wstring prior, raw, question, accepted;
   std::wstring lastAccepted;
   size_t requestStart = 0;
+  ULONGLONG verifyCommitUntil = 0;
   std::string mode;
   LengthLimits limits;
   std::vector<std::wstring> words;
@@ -152,6 +153,7 @@ class Service final : public ITfTextInputProcessor,
     accepted.clear();
     lastAccepted.clear();
     requestStart = 0;
+    verifyCommitUntil = 0;
     mode.clear();
     if (popup) {
       KillTimer(popup, 1);
@@ -222,10 +224,10 @@ class Service final : public ITfTextInputProcessor,
     if (FAILED(sel->IsEmpty(ec, &empty)) ||
         FAILED(sel->IsEqualStart(ec, anchor, TF_ANCHOR_START, &same)))
       return std::nullopt;
-    if (!empty || !same)
+    if (!empty)
       return false;
     if (prior.empty())
-      return true;
+      return same != FALSE;
     ITfRange *tail = nullptr;
     if (FAILED(sel->Clone(&tail)))
       return std::nullopt;
@@ -237,7 +239,17 @@ class Service final : public ITfTextInputProcessor,
     tail->Release();
     if (!ok)
       return std::nullopt;
-    return matchesCaretText(prior, std::wstring(text, read));
+    if (matchesCaretText(prior, std::wstring(text, read))) {
+      if (same)
+        return true;
+      if (verifyCommitUntil > GetTickCount64()) {
+        track(context, sel);
+        return true;
+      }
+    }
+    if (verifyCommitUntil > GetTickCount64())
+      return std::nullopt;
+    return false;
   }
   void track(ITfContext *ctx, ITfRange *sel) {
     if (context != ctx) {
@@ -336,6 +348,7 @@ class Service final : public ITfTextInputProcessor,
     if (prior.size() > 512)
       prior.erase(0, prior.size() - 512);
     track(ctx, sel);
+    verifyCommitUntil = GetTickCount64() + 500;
     return true;
   }
   void poll() {
@@ -379,6 +392,7 @@ class Service final : public ITfTextInputProcessor,
         sel.range->Release();
         return;
       }
+      verifyCommitUntil = 0;
       if (due && GetTickCount64() >= due) {
         due = 0;
         stream = predict(question, accepted, mode, limits);
@@ -390,7 +404,8 @@ class Service final : public ITfTextInputProcessor,
           std::lock_guard<std::mutex> guard(stream->lock);
           if (!stream->rows.empty())
             next = stream->rows.front().words;
-          mode = stream->mode;
+          if (!stream->mode.empty())
+            mode = stream->mode;
           completed = stream->done && next.empty();
         }
         if (words != next || (!next.empty() && !IsWindowVisible(popup))) {
@@ -399,7 +414,8 @@ class Service final : public ITfTextInputProcessor,
         }
         if (completed) {
           size_t used = characterCount(accepted);
-          if (limits.needsMoreAnswer(mode, used, requestStart)) {
+          if (limits.needsMoreAnswer(mode, used, requestStart) ||
+              needsMoreContinuation(mode, accepted, requestStart, limits)) {
             requestStart = used;
             stream = predict(question, accepted, mode, limits, lastAccepted);
           } else {
@@ -447,6 +463,8 @@ class Service final : public ITfTextInputProcessor,
       return false;
     if (!raw.empty())
       return vk == VK_RETURN || symbol(vk, flags) != 0;
+    if (waitingForNext(vk))
+      return true;
     if (!words.empty() && (vk == VK_TAB || vk == VK_ESCAPE ||
                            (vk >= '1' && vk < '1' + words.size())))
       return GetKeyState(VK_SHIFT) >= 0;
@@ -456,9 +474,15 @@ class Service final : public ITfTextInputProcessor,
     return (ch >= 'a' && ch <= 'z') ||
            (ch > 0 && ch < 128 && strchr(",.?!:;()[]/", ch));
   }
+  bool waitingForNext(WPARAM vk) const {
+    return stream && raw.empty() && words.empty() && !accepted.empty() &&
+           GetKeyState(VK_SHIFT) >= 0 &&
+           (vk == VK_TAB || (vk >= '1' && vk <= '3'));
+  }
   bool key(ITfContext *ctx, ITfRange *&sel, TfEditCookie ec, WPARAM vk,
            LPARAM flags) {
-    if (context != ctx || (anchor && !sameCaret(sel, ec).value_or(false)))
+    auto same = context == ctx && anchor ? sameCaret(sel, ec) : std::optional<bool>(false);
+    if (same == false)
       clearAll();
     if (secure(ctx, sel, ec) || !wants(vk, flags)) {
       clearAll();
@@ -468,8 +492,12 @@ class Service final : public ITfTextInputProcessor,
       clearPrediction();
       return true;
     }
+    if (waitingForNext(vk))
+      return true;
     if (raw.empty() && !words.empty() &&
         (vk == VK_TAB || (vk >= '1' && vk < '1' + words.size()))) {
+      if (!same.has_value())
+        return true;
       size_t n = vk == VK_TAB ? 0 : vk - '1';
       std::wstring word = spaced(
           words[n],
@@ -502,7 +530,6 @@ class Service final : public ITfTextInputProcessor,
         stream->cancelled = true;
         requestStart = characterCount(accepted);
         stream = predict(question, accepted, mode, limits, lastAccepted);
-        words.clear();
       } else {
         std::lock_guard<std::mutex> guard(stream->lock);
         stream->rows.pop_front();
@@ -675,7 +702,7 @@ public:
       ULONG n = 0;
       if (SUCCEEDED(ctx->GetSelection(ec, TF_DEFAULT_SELECTION, 1, &sel, &n)) &&
           n) {
-        if (context != ctx || (anchor && !sameCaret(sel.range, ec).value_or(false)))
+        if (context != ctx || (anchor && sameCaret(sel.range, ec) == false))
           clearAll();
         *eaten = !secure(ctx, sel.range, ec) && wants(vk, lp);
         sel.range->Release();

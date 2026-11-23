@@ -35,6 +35,15 @@ inline size_t characterCount(const std::wstring &text) {
   return count;
 }
 
+inline bool needsMoreContinuation(const std::string &mode, const std::wstring &accepted,
+                                  size_t requestStart, const LengthLimits &limits) {
+  if (mode != "continuation" || accepted.empty() ||
+      characterCount(accepted) <= requestStart || characterCount(accepted) >= limits.continuation)
+    return false;
+  auto last = accepted.find_last_not_of(L" \t");
+  return last != std::wstring::npos && !wcschr(L"。！？.!?…", accepted[last]);
+}
+
 inline std::wstring spaced(std::wstring word, const std::wstring &previous) {
   if (previous.empty() || word.empty())
     return word;
