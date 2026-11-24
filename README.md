@@ -7,9 +7,9 @@
 | 平台 | 适用系统 | 下载 |
 | --- | --- | --- |
 | macOS | macOS 13 及以上，Apple 芯片或 Intel | [Mac 安装包（ZIP）](https://github.com/Xu060113/noname-imput/releases/download/v1.0.0/Yuju-macOS-universal.zip) |
-| Windows | Windows 10 或 11，Intel／AMD x64 桌面应用 | [Windows 安装程序（EXE）](https://github.com/Xu060113/noname-imput/releases/download/v1.2.0/Yuju-Setup-Windows-x64.exe) |
+| Windows | Windows 10 或 11，Intel／AMD x64 桌面应用 | [Windows 安装程序（EXE）](https://github.com/Xu060113/noname-imput/releases/download/v1.2.1/Yuju-Setup-Windows-x64.exe) |
 
-需要自行构建时，可以下载包含两端代码、词典和测试的[完整源码包](https://github.com/Xu060113/noname-imput/releases/download/v1.2.0/Yuju-Source.zip)。
+需要自行构建时，可以下载包含两端代码、词典和测试的[完整源码包](https://github.com/Xu060113/noname-imput/releases/download/v1.2.1/Yuju-Source.zip)。
 
 ## 试着输入一句话
 
@@ -52,7 +52,7 @@
 
 导入后，正文副本保存在当前用户的 `%LOCALAPPDATA%\Yuju\References`。输入法用问题末尾的关键词在本机查找最多三个相关片段，将片段和文件名交给 DeepSeek 优先参考。修改原文件后可以重新导入。在列表中选择文件并点击「移除」即可移除本地副本。
 
-勾选「使用当前输入框光标前的文字」并保存后，每次开始一轮预测都会读取应用允许访问的前文，最多 32,768 个 UTF-16 码元，包括已经粘贴的内容。光标后的内容不参与请求。后续选词沿用这次前文并追加已选内容。关闭此项或应用不提供前文时，输入法使用本次连续输入的片段。密码和标记为私密的输入框跳过预测。
+勾选「使用当前输入框光标前的文字」并保存后，每次开始一轮预测都会读取应用允许访问的前文，最多 32,768 个 UTF-16 码元，包括已经粘贴的内容。光标后的内容不参与请求。后续选词沿用这次前文并追加已选内容。长回答和改选分支沿用首轮确定的回答语言，英文回答会用英文转述中文参考资料。关闭此项或应用不提供前文时，输入法使用本次连续输入的片段。密码和标记为私密的输入框跳过预测。
 
 Windows 版使用原生 TSF 组件，面向 x64 桌面应用。设置按用户保存，密钥存入 Windows 凭据管理器中的 `Yuju/DeepSeek`。本版安装程序未经 Authenticode 发布者签名。Windows ARM64 原生应用和 32 位应用需要对应架构的输入法组件。
 

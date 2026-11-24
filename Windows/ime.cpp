@@ -103,7 +103,7 @@ class Service final : public ITfTextInputProcessor,
   std::wstring lastAccepted;
   size_t requestStart = 0;
   ULONGLONG verifyCommitUntil = 0;
-  std::string mode;
+  std::string mode, replyLanguage;
   LengthLimits limits;
   std::vector<std::wstring> words;
   std::vector<int> candidateEdges;
@@ -187,6 +187,7 @@ class Service final : public ITfTextInputProcessor,
     requestStart = 0;
     verifyCommitUntil = 0;
     mode.clear();
+    replyLanguage.clear();
     if (popup) {
       KillTimer(popup, 1);
       ShowWindow(popup, SW_HIDE);
@@ -468,7 +469,7 @@ class Service final : public ITfTextInputProcessor,
         stream = predict(question, accepted, mode, limits);
       }
       if (stream) {
-        bool completed;
+        bool completed, languageInterrupted;
         std::vector<std::wstring> next;
         {
           std::lock_guard<std::mutex> guard(stream->lock);
@@ -476,7 +477,10 @@ class Service final : public ITfTextInputProcessor,
             next = stream->rows.front().words;
           if (!stream->mode.empty())
             mode = stream->mode;
+          if (!stream->language.empty())
+            replyLanguage = stream->language;
           completed = stream->done && next.empty();
+          languageInterrupted = stream->languageInterrupted;
         }
         if (words != next || IsWindowVisible(popup) != BOOL(!next.empty())) {
           words = next;
@@ -484,10 +488,11 @@ class Service final : public ITfTextInputProcessor,
         }
         if (completed) {
           size_t used = characterCount(accepted);
-          if (limits.needsMoreAnswer(mode, used, requestStart) ||
+          if ((languageInterrupted && used > requestStart && used < limits.forMode(mode)) ||
+              limits.needsMoreAnswer(mode, used, requestStart) ||
               needsMoreContinuation(mode, accepted, requestStart, limits)) {
             requestStart = used;
-            stream = predict(question, accepted, mode, limits, lastAccepted);
+            stream = predict(question, accepted, mode, limits, lastAccepted, replyLanguage);
           } else {
             clearPrediction();
           }
@@ -588,7 +593,7 @@ class Service final : public ITfTextInputProcessor,
       if (branch) {
         stream->cancelled = true;
         requestStart = characterCount(accepted);
-        stream = predict(question, accepted, mode, limits, lastAccepted);
+        stream = predict(question, accepted, mode, limits, lastAccepted, replyLanguage);
       } else {
         std::lock_guard<std::mutex> guard(stream->lock);
         stream->rows.pop_front();

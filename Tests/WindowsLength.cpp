@@ -32,6 +32,18 @@ int main() {
   PredictionBudget exact(8, L"", L"12345678");
   assert(!exact.canContinue() && exact.next({L"."}).words.empty());
   assert(characterCount(L"中🙂！") == 3);
+  PredictionBudget en(80, L"what is data", L"Data");
+  auto clean = en.next({L"is", L"是", L"refers"}, true);
+  assert(!clean.firstIsBranch && clean.words == (std::vector<std::wstring>{L"is", L"refers"}));
+  auto repaired = en.next({L"，而其质量", L"reliable"}, true);
+  assert(repaired.firstIsBranch && repaired.words == (std::vector<std::wstring>{L"reliable"}));
+  assert(!en.canContinue());
+  PredictionBudget drift(80, L"what is data", L"accuracy and timeliness");
+  assert(drift.next({L"，", L"而其质量"}, true).words.empty() && !drift.canContinue());
+  assert(!containsCjkText(L"readings—and"));
+  assert(containsCjkText(L"and质量") && containsCjkText(L"𠀀"));
+  PredictionBudget mixed(80, L"Explain in English and Chinese", L"");
+  assert(mixed.next({L"数据"}).words.front() == L"数据");
   assert(characterCount(std::wstring{wchar_t(0xd83d), wchar_t(0xde00)}) == 1);
 
   const std::wstring question = L"什么是数据库";

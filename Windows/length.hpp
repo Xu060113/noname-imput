@@ -67,6 +67,21 @@ struct CandidateRow {
   bool firstIsBranch = false;
 };
 
+inline bool containsCjkText(const std::wstring &word) {
+  for (size_t i = 0; i < word.size(); ++i) {
+    unsigned c = word[i];
+    if (c >= 0xd800 && c <= 0xdbff && i + 1 < word.size() &&
+        word[i+1] >= 0xdc00 && word[i+1] <= 0xdfff)
+      c = 0x10000 + ((c - 0xd800) << 10) + word[++i] - 0xdc00;
+    if ((c >= 0x3400 && c <= 0x9fff) || (c >= 0xf900 && c <= 0xfaff) ||
+        (c >= 0x20000 && c <= 0x323af) ||
+        (c >= 0x3001 && c <= 0x3002) || c == 0xff0c || c == 0xff1a ||
+        c == 0xff01 || c == 0xff1f || c == 0xff1b)
+      return true;
+  }
+  return false;
+}
+
 // Text stores expose paragraph breaks as CRLF, CR, or LF. Compare the same
 // logical suffix even when these representations have different UTF-16 lengths.
 inline std::wstring caretSuffix(const std::wstring &text) {
@@ -109,11 +124,12 @@ public:
 
   bool canContinue() const { return remaining > 0; }
 
-  CandidateRow next(const std::vector<std::wstring> &words) {
+  CandidateRow next(const std::vector<std::wstring> &words, bool englishOnly = false) {
     CandidateRow row;
     std::wstring preferred;
     bool echoedFirst = false;
     for (size_t i = 0; i < words.size(); ++i) {
+      if (englishOnly && containsCjkText(words[i])) continue;
       if (words[i] == lastWord && characterCount(lastWord) > 1) {
         if (i == 0)
           echoedFirst = true;
