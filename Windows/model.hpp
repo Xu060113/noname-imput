@@ -166,7 +166,7 @@ inline void runModel(std::shared_ptr<Stream> stream, const std::string &input,
             return;
           stream->mode = mode.empty() ? m : mode;
           budget.emplace(limits.forMode(stream->mode), wide(input),
-                         acceptedText, stream->mode, lastAccepted);
+                         acceptedText, lastAccepted);
           if (header)
             continue;
         }

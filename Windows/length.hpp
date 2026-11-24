@@ -22,8 +22,7 @@ struct LengthLimits {
   }
 };
 
-// Count Unicode scalar values. The initial answer line break is inserted by the
-// host separately. Spaces between accepted English words are part of the text.
+// Count Unicode scalar values including spaces inserted between English words.
 inline size_t characterCount(const std::wstring &text) {
   size_t count = 0;
   for (size_t i = 0; i < text.size(); ++i) {
@@ -102,10 +101,9 @@ class PredictionBudget {
 
 public:
   PredictionBudget(unsigned limit, const std::wstring &input,
-                   const std::wstring &accepted, const std::string &mode,
+                   const std::wstring &accepted,
                    const std::wstring &lastAccepted = L"")
-      : preceding(accepted.empty() && mode == "continuation" ? input
-                                                             : accepted),
+      : preceding(accepted.empty() ? input : accepted),
         lastWord(accepted.empty() ? input : lastAccepted),
         remaining(limit - std::min<size_t>(limit, characterCount(accepted))) {}
 

@@ -72,10 +72,38 @@ static std::wstring candidateWord(HWND popup, int key = '1') {
 
 static bool checkInput(HWND editor, ITfKeystrokeMgr *keyboard, const std::string &scenario) {
   bool greeting = scenario == "greeting";
+  auto choose = [&](int digit) {
+    if (scenario != "mouse")
+      return press(keyboard, digit);
+    HWND popup = visibleCandidates();
+    if (!popup || GetFocus() != editor)
+      return false;
+    auto label = textOf(popup);
+    auto pos = label.find(L"   " + std::wstring(1, wchar_t(digit)) + L" ");
+    if (pos == label.npos)
+      return false;
+    HDC dc = GetDC(popup);
+    auto font = SelectObject(dc, GetStockObject(DEFAULT_GUI_FONT));
+    SIZE size{};
+    GetTextExtentPoint32W(dc, label.c_str(), int(pos + 4), &size);
+    SelectObject(dc, font);
+    ReleaseDC(popup, dc);
+    POINT point{8 + size.cx, 8};
+    LPARAM location = MAKELPARAM(point.x, point.y);
+    ClientToScreen(popup, &point);
+    if (WindowFromPoint(point) != popup ||
+        SendMessageW(popup, WM_MOUSEACTIVATE, (WPARAM)GetActiveWindow(),
+                     MAKELPARAM(HTCLIENT, WM_LBUTTONDOWN)) != MA_NOACTIVATE)
+      return false;
+    SendMessageW(popup, WM_LBUTTONDOWN, MK_LBUTTON, location);
+    SendMessageW(popup, WM_LBUTTONUP, 0, location);
+    return GetFocus() == editor;
+  };
   for (int letter : std::string(greeting ? "NIHAO" : "SHENMESHISHUJUKU"))
     if (!press(keyboard, letter))
       return false;
-  if (!press(keyboard, '1') || textOf(editor) != (greeting ? L"你好" : L"什么是数据库"))
+  pumpMessages(100);
+  if (!choose('1') || textOf(editor) != (greeting ? L"你好" : L"什么是数据库"))
     return false;
   HWND first = waitForCandidates();
   if (!first)
@@ -86,11 +114,18 @@ static bool checkInput(HWND editor, ITfKeystrokeMgr *keyboard, const std::string
     if (!visibleCandidates() || row != textOf(first) || textOf(editor) != L"你好")
       return false;
     int choice = row.find(L"   2 ") != std::wstring::npos ? '2' : '1';
+    auto selected = candidateWord(first, choice);
     if (!press(keyboard, choice))
       return false;
     auto result = textOf(editor);
-    return result.size() > 2 && result.compare(0, 2, L"你好") == 0 &&
-           result.find(L"你好", 2) == std::wstring::npos;
+    if (result != L"你好" + selected || result.find(L"你好", 2) != result.npos)
+      return false;
+    pumpMessages(100);
+    auto next = waitForCandidates();
+    if (!next)
+      return false;
+    auto nextWord = candidateWord(next);
+    return !nextWord.empty() && choose('1') && textOf(editor) == result + nextWord;
   }
   int firstKey = scenario == "branch3" ? '3' : scenario == "branch2" ? '2' : '1';
   auto firstChoice = candidateWord(first, firstKey);
@@ -98,11 +133,11 @@ static bool checkInput(HWND editor, ITfKeystrokeMgr *keyboard, const std::string
     puts("Model did not offer the requested alternative");
     return false;
   }
-  if (!press(keyboard, firstKey))
+  if (!choose(firstKey))
     return false;
   auto answer = textOf(editor);
-  auto start = answer.find_first_not_of(L"\r\n ", std::wstring(L"什么是数据库").size());
-  if (start == std::wstring::npos || answer.substr(start) != firstChoice)
+  auto start = std::wstring(L"什么是数据库").size();
+  if (answer != L"什么是数据库" + firstChoice)
     return false;
   if (firstKey != '1' && (!press(keyboard, firstKey) || textOf(editor) != answer)) {
     puts("A key pressed while waiting changed the accepted text");
@@ -116,7 +151,7 @@ static bool checkInput(HWND editor, ITfKeystrokeMgr *keyboard, const std::string
   auto choice = candidateWord(second);
   pumpMessages(2200);
   if (!visibleCandidates() || textOf(second) != row || textOf(editor) != answer ||
-      !press(keyboard, '1'))
+      !choose('1'))
     return false;
   auto extended = textOf(editor);
   if (extended != answer + choice)

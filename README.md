@@ -7,17 +7,17 @@
 | 平台 | 适用系统 | 下载 |
 | --- | --- | --- |
 | macOS | macOS 13 及以上，Apple 芯片或 Intel | [Mac 安装包（ZIP）](https://github.com/Xu060113/noname-imput/releases/download/v1.0.0/Yuju-macOS-universal.zip) |
-| Windows | Windows 10 或 11，Intel／AMD x64 桌面应用 | [Windows 安装程序（EXE）](https://github.com/Xu060113/noname-imput/releases/download/v1.1.7/Yuju-Setup-Windows-x64.exe) |
+| Windows | Windows 10 或 11，Intel／AMD x64 桌面应用 | [Windows 安装程序（EXE）](https://github.com/Xu060113/noname-imput/releases/download/v1.1.8/Yuju-Setup-Windows-x64.exe) |
 
-需要自行构建时，可以下载包含两端代码、词典和测试的[完整源码包](https://github.com/Xu060113/noname-imput/releases/download/v1.1.7/Yuju-Source.zip)。
+需要自行构建时，可以下载包含两端代码、词典和测试的[完整源码包](https://github.com/Xu060113/noname-imput/releases/download/v1.1.8/Yuju-Source.zip)。
 
 ## 试着输入一句话
 
 1. 切换到「语句拼音」，打出「什么是大模型」，用空格确认拼音。开启 AI 后，停顿约 600 毫秒会触发请求，候选的出现时间还取决于网络和模型响应。
-2. 光标旁可能出现 `1 大模型　2 它　3 通常`。按 **Tab** 接受「大模型」，答案另起一行。再按 Tab 可以依次接上「是」「一种」等词，直到回答结束。按 **2** 或 **3** 会沿你选中的措辞继续生成。
+2. 光标旁可能出现 `1 大模型　2 它　3 通常`。按 **Tab** 接受「大模型」，Windows 版会把选中的词接在原文同一行，macOS 版会另起一行。再按 Tab 可以依次接上「是」「一种」等词，直到回答结束。按 **2** 或 **3** 会沿你选中的措辞继续生成。
 3. 输入「我今天想」时，所选词直接接在原句后。按 **Esc** 收起候选，也可以继续打字。
 
-拼音候选用空格或数字确认。输入英文时用回车确认当前单词，例如依次输入 `hello`、回车、`world`、回车，结果为 `hello world`。
+拼音候选用空格或数字确认。Windows 也可以用鼠标点击候选窗中的词来确认拼音或继续选择 AI 候选。输入英文时用回车确认当前单词，例如依次输入 `hello`、回车、`world`、回车，结果为 `hello world`。
 
 本地拼音可以离线使用。启用 AI 预测后，本次连续输入的片段及已接受的续写前缀会发送给 DeepSeek。请在下方对应平台的设置窗口填写自己的密钥。
 
@@ -44,7 +44,7 @@
 | 问题回答上限 | 80 个字符 | 8–300 |
 | 语句续写上限 | 24 个字符 | 8–300 |
 
-例如，将回答设为 120、续写设为 16，提问时可以逐词接出较长解释，写半句话时最多补 16 个字符。保存后从下一次预测生效，可以关闭后台继续打字。空格与标点计入上限，原文和答案开头的换行不计。改选其他候选时，已经接受的内容仍计入本次总长度。Windows 问答以所设上限的约四分之三到上限为目标。例如设为 300 时，模型用完当前候选且已确认的回答不足 225 字，输入法会按已选内容请求补充。继续按数字或 Tab 可逐词接下去。
+例如，将回答设为 120、续写设为 16，提问时可以逐词接出较长解释，写半句话时最多补 16 个字符。保存后从下一次预测生效，可以关闭后台继续打字。空格与标点计入上限，原文不计。改选其他候选时，已经接受的内容仍计入本次总长度。Windows 问答以所设上限的约四分之三到上限为目标。例如设为 300 时，模型用完当前候选且已确认的回答不足 225 字，输入法会按已选内容请求补充。继续按数字或 Tab 可逐词接下去。
 
 Windows 版使用原生 TSF 组件，面向 x64 桌面应用。设置按用户保存，密钥存入 Windows 凭据管理器中的 `Yuju/DeepSeek`。本版安装程序未经 Authenticode 发布者签名。Windows ARM64 原生应用和 32 位应用需要对应架构的输入法组件。
 
@@ -56,8 +56,8 @@ Windows 版使用原生 TSF 组件，面向 x64 桌面应用。设置按用户�
 
 ## 项目内容
 
-v1.0.0 已在 Mac 上验证真实拼音词库、英文空格与模拟流式回答。Windows v1.1.6 的回归测试覆盖问答换行后的光标检查、重复候选、备选分支、回答与续写长度和英文空格计数。`Tests/WindowsCandidates.cpp` 在临时 Windows RichEdit 窗口中通过 TSF 驱动已安装的输入法，使用控制后台配置的 DeepSeek 服务。默认样例为「什么是数据库」，传入 `greeting` 可测试「你好」上屏后停顿再按数字选词。传入 `single` 可测试单行输入，传入 `long` 会沿首选一路确认，校验每次上屏的词并统计整段回答的字符数。
+v1.0.0 已在 Mac 上验证真实拼音词库、英文空格与模拟流式回答。Windows v1.1.6 的回归测试覆盖问答换行后的光标检查、重复候选、备选分支、回答与续写长度和英文空格计数。`Tests/WindowsCandidates.cpp` 在临时 Windows RichEdit 窗口中通过 TSF 驱动已安装的输入法，使用控制后台配置的 DeepSeek 服务。默认样例为「什么是数据库」，传入 `greeting` 可测试「你好」上屏后停顿再按数字选词。传入 `mouse` 可测试鼠标确认拼音后连续点击两组 AI 候选，传入 `branch2` 可测试按数字 2 后继续选词，传入 `single` 可测试单行输入，传入 `long` 会沿首选一路确认，校验每次上屏的词并统计整段回答的字符数。
 
-`Sources` 为 Mac 实现，`Windows` 为 TSF、WinHTTP、设置和安装器源码，`Resources/Rime` 为共享方案和词典，`Tests` 为固定响应与在线检查。模型为 `deepseek-flash`，通过 `https://api.deepseek.com/chat/completions` 流式调用，关闭思考模式。英文空格、问答换行和各候选的实际文字均由输入法在确认后提交。
+`Sources` 为 Mac 实现，`Windows` 为 TSF、WinHTTP、设置和安装器源码，`Resources/Rime` 为共享方案和词典，`Tests` 为固定响应与在线检查。模型为 `deepseek-flash`，通过 `https://api.deepseek.com/chat/completions` 流式调用，关闭思考模式。英文空格和各候选的实际文字均由输入法在确认后提交。
 
 librime 来自 rime/librime 1.17.0。简体词典来自 rime/rime-pinyin-simp 的 0c6861ef7420ee780270ca6d993d18d4101049d0。Windows JSON 库使用 nlohmann/json 3.11.3。授权文本位于 `Resources/Licenses`。

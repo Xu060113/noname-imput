@@ -105,6 +105,9 @@ class Service final : public ITfTextInputProcessor,
   std::string mode;
   LengthLimits limits;
   std::vector<std::wstring> words;
+  std::vector<int> candidateEdges;
+  int pressedCandidate = -1;
+  std::wstring pressedWord;
   std::shared_ptr<Stream> stream;
   ULONGLONG due = 0;
   static LRESULT CALLBACK windowProc(HWND w, UINT msg, WPARAM wp, LPARAM lp) {
@@ -122,8 +125,34 @@ class Service final : public ITfTextInputProcessor,
       self->refreshPopup();
       return 0;
     }
-    if (msg == WM_NCHITTEST)
-      return HTTRANSPARENT;
+    if (msg == WM_APP + 2 && self) {
+      if (self->stream)
+        self->poll();
+      return 0;
+    }
+    if (msg == WM_MOUSEACTIVATE)
+      return MA_NOACTIVATE;
+    if (self && msg == WM_LBUTTONDOWN) {
+      int i = self->candidateAt(lp);
+      if (i >= 0) {
+        self->pressedCandidate = i;
+        self->pressedWord = self->words[i];
+        SetCapture(w);
+      }
+      return 0;
+    }
+    if (self && msg == WM_LBUTTONUP) {
+      int i = self->candidateAt(lp);
+      bool choose = i >= 0 && i == self->pressedCandidate &&
+                    self->words[i] == self->pressedWord && GetCapture() == w;
+      if (GetCapture() == w)
+        ReleaseCapture();
+      if (choose)
+        self->clickCandidate(i);
+      return 0;
+    }
+    if (self && msg == WM_CAPTURECHANGED)
+      self->pressedCandidate = -1;
     if (msg == WM_PAINT) {
       PAINTSTRUCT ps;
       HDC dc = BeginPaint(w, &ps);
@@ -144,6 +173,8 @@ class Service final : public ITfTextInputProcessor,
     return DefWindowProcW(w, msg, wp, lp);
   }
   void clearPrediction() {
+    pressedCandidate = -1;
+    candidateEdges.clear();
     if (stream)
       stream->cancelled = true;
     stream.reset();
@@ -260,15 +291,42 @@ class Service final : public ITfTextInputProcessor,
     release(anchor);
     sel->Clone(&anchor);
   }
+  int candidateAt(LPARAM point) const {
+    POINT p{(short)LOWORD(point), (short)HIWORD(point)};
+    RECT bounds{};
+    GetClientRect(popup, &bounds);
+    if (!PtInRect(&bounds, p) || candidateEdges.size() != words.size() + 1)
+      return -1;
+    for (size_t i = 0; i < words.size(); ++i)
+      if (p.x >= candidateEdges[i] && p.x < candidateEdges[i + 1])
+        return static_cast<int>(i);
+    return -1;
+  }
+  void clickCandidate(int index) {
+    ITfDocumentMgr *doc = nullptr;
+    ITfContext *ctx = nullptr;
+    if (SUCCEEDED(manager->GetFocus(&doc)) && doc)
+      doc->GetTop(&ctx);
+    release(doc);
+    if (ctx && ctx == context) {
+      edit(ctx, TF_ES_READWRITE, [&](TfEditCookie ec) {
+        TF_SELECTION sel{};
+        ULONG count = 0;
+        if (SUCCEEDED(ctx->GetSelection(ec, TF_DEFAULT_SELECTION, 1, &sel, &count)) && count) {
+          if (ctx == context && sameCaret(sel.range, ec) == true)
+            key(ctx, sel.range, ec, '1' + index, 0);
+          sel.range->Release();
+        }
+      });
+    }
+    release(ctx);
+  }
   void paint(ITfRange *sel, TfEditCookie ec) {
     if (!popup || (raw.empty() && words.empty())) {
       if (popup)
         ShowWindow(popup, SW_HIDE);
       return;
     }
-    std::wstring label = raw;
-    for (size_t i = 0; i < words.size(); i++)
-      label += L"   " + std::to_wstring(i + 1) + L" " + words[i];
     ITfContextView *view = nullptr;
     RECT rect{};
     BOOL clipped = FALSE;
@@ -282,8 +340,15 @@ class Service final : public ITfTextInputProcessor,
     }
     HDC dc = GetDC(popup);
     auto old = SelectObject(dc, GetStockObject(DEFAULT_GUI_FONT));
-    SIZE size;
+    std::wstring label = raw;
+    SIZE size{};
     GetTextExtentPoint32W(dc, label.c_str(), (int)label.size(), &size);
+    candidateEdges = {8 + size.cx};
+    for (size_t i = 0; i < words.size(); ++i) {
+      label += L"   " + std::to_wstring(i + 1) + L" " + words[i];
+      GetTextExtentPoint32W(dc, label.c_str(), (int)label.size(), &size);
+      candidateEdges.push_back(8 + size.cx);
+    }
     SelectObject(dc, old);
     ReleaseDC(popup, dc);
     MONITORINFO monitor{sizeof(MONITORINFO)};
@@ -408,7 +473,7 @@ class Service final : public ITfTextInputProcessor,
             mode = stream->mode;
           completed = stream->done && next.empty();
         }
-        if (words != next || (!next.empty() && !IsWindowVisible(popup))) {
+        if (words != next || IsWindowVisible(popup) != BOOL(!next.empty())) {
           words = next;
           paint(sel.range, ec);
         }
@@ -499,19 +564,8 @@ class Service final : public ITfTextInputProcessor,
       if (!same.has_value())
         return true;
       size_t n = vk == VK_TAB ? 0 : vk - '1';
-      std::wstring word = spaced(
-          words[n],
-          accepted.empty() ? (mode == "answer" ? L"" : question) : accepted);
-      // RichEdit represents a paragraph as CR. Browser text stores use LF
-      // and synchronize their document offsets with the renderer after commit.
-      wchar_t windowClass[64]{};
-      GetClassNameW(GetFocus(), windowClass, 64);
-      const wchar_t *separator = wcsncmp(windowClass, L"Chrome_", 7) == 0 ? L"\n" : L"\r";
-      if ((!_wcsicmp(windowClass, L"Edit") || !_wcsnicmp(windowClass, L"RichEdit", 8)) &&
-          !(GetWindowLongPtrW(GetFocus(), GWL_STYLE) & ES_MULTILINE))
-        separator = L" ";
-      if (!insert(ctx, sel, ec,
-                  (accepted.empty() && mode == "answer" ? separator : L"") + word)) {
+      std::wstring word = spaced(words[n], accepted.empty() ? question : accepted);
+      if (!insert(ctx, sel, ec, word)) {
         clearAll();
         return false;
       }
@@ -534,10 +588,10 @@ class Service final : public ITfTextInputProcessor,
         std::lock_guard<std::mutex> guard(stream->lock);
         stream->rows.pop_front();
       }
-      // The renderer can acknowledge a write after this edit session returns.
-      // Publish the next row only from poll(), after verifying the new caret.
+      // Switch rows in a fresh read session, once the host applies the write.
+      // Keep the old row inert until poll replaces it or hides the window.
       words.clear();
-      schedulePaint();
+      PostMessageW(popup, WM_APP + 2, 0, 0);
       return true;
     }
     clearPrediction();
@@ -631,6 +685,7 @@ public:
     WNDCLASSW wc{};
     wc.hInstance = module;
     wc.lpfnWndProc = windowProc;
+    wc.hCursor = LoadCursorW(nullptr, MAKEINTRESOURCEW(32512));
     wc.lpszClassName = L"YujuWordCandidates";
     RegisterClassW(&wc);
     popup = CreateWindowExW(WS_EX_TOOLWINDOW | WS_EX_NOACTIVATE | WS_EX_TOPMOST,
