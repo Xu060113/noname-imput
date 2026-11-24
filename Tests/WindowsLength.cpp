@@ -7,7 +7,7 @@ int main() {
   assert(limits.forMode("answer") == 80);
   assert(limits.forMode("continuation") == 24);
   assert(!LengthLimits::valid(7) && LengthLimits::valid(8));
-  assert(LengthLimits::valid(300) && !LengthLimits::valid(301));
+  assert(LengthLimits::valid(300) && LengthLimits::valid(999) && !LengthLimits::valid(1000));
 
   PredictionBudget answer(8, L"什么是大模型", L"");
   assert(answer.next({L"大模型", L"它"}).words.size() == 2);
@@ -71,7 +71,7 @@ int main() {
   assert(alternatives.firstIsBranch && alternatives.words.front() == L"可以");
   assert(!restarted.canContinue());
 
-  for (unsigned limit : {8u, 24u, 80u, 300u}) {
+  for (unsigned limit : {8u, 24u, 80u, 300u, 999u}) {
     PredictionBudget longAnswer(limit, L"原问题不占长度", L"");
     for (unsigned i=0; i<limit; ++i) {
       assert(longAnswer.canContinue());

@@ -7,9 +7,9 @@
 | 平台 | 适用系统 | 下载 |
 | --- | --- | --- |
 | macOS | macOS 13 及以上，Apple 芯片或 Intel | [Mac 安装包（ZIP）](https://github.com/Xu060113/noname-imput/releases/download/v1.0.0/Yuju-macOS-universal.zip) |
-| Windows | Windows 10 或 11，Intel／AMD x64 桌面应用 | [Windows 安装程序（EXE）](https://github.com/Xu060113/noname-imput/releases/download/v1.1.8/Yuju-Setup-Windows-x64.exe) |
+| Windows | Windows 10 或 11，Intel／AMD x64 桌面应用 | [Windows 安装程序（EXE）](https://github.com/Xu060113/noname-imput/releases/download/v1.2.0/Yuju-Setup-Windows-x64.exe) |
 
-需要自行构建时，可以下载包含两端代码、词典和测试的[完整源码包](https://github.com/Xu060113/noname-imput/releases/download/v1.1.8/Yuju-Source.zip)。
+需要自行构建时，可以下载包含两端代码、词典和测试的[完整源码包](https://github.com/Xu060113/noname-imput/releases/download/v1.2.0/Yuju-Source.zip)。
 
 ## 试着输入一句话
 
@@ -41,10 +41,18 @@
 
 | 后台设置 | 默认上限 | 可调范围 |
 | --- | --- | --- |
-| 问题回答上限 | 80 个字符 | 8–300 |
-| 语句续写上限 | 24 个字符 | 8–300 |
+| 问题回答上限 | 80 个字符 | 8–999 |
+| 语句续写上限 | 24 个字符 | 8–999 |
 
 例如，将回答设为 120、续写设为 16，提问时可以逐词接出较长解释，写半句话时最多补 16 个字符。保存后从下一次预测生效，可以关闭后台继续打字。空格与标点计入上限，原文不计。改选其他候选时，已经接受的内容仍计入本次总长度。Windows 问答以所设上限的约四分之三到上限为目标。例如设为 300 时，模型用完当前候选且已确认的回答不足 225 字，输入法会按已选内容请求补充。继续按数字或 Tab 可逐词接下去。
+
+### 使用参考文件和光标前的文字
+
+在控制后台点击「导入文件…」，可逐个添加资料。支持 UTF-8 或带 BOM 的 UTF-16 纯文本（含 TXT、Markdown、CSV、JSON）、XLSX 和 RTF。PDF、Word、PowerPoint、HTML 等格式使用本机注册的 Windows 文字提取器。扫描件需要先做文字识别。单份提取正文以 2 MiB UTF-8 为限。
+
+导入后，正文副本保存在当前用户的 `%LOCALAPPDATA%\Yuju\References`。输入法用问题末尾的关键词在本机查找最多三个相关片段，将片段和文件名交给 DeepSeek 优先参考。修改原文件后可以重新导入。在列表中选择文件并点击「移除」即可移除本地副本。
+
+勾选「使用当前输入框光标前的文字」并保存后，每次开始一轮预测都会读取应用允许访问的前文，最多 32,768 个 UTF-16 码元，包括已经粘贴的内容。光标后的内容不参与请求。后续选词沿用这次前文并追加已选内容。关闭此项或应用不提供前文时，输入法使用本次连续输入的片段。密码和标记为私密的输入框跳过预测。
 
 Windows 版使用原生 TSF 组件，面向 x64 桌面应用。设置按用户保存，密钥存入 Windows 凭据管理器中的 `Yuju/DeepSeek`。本版安装程序未经 Authenticode 发布者签名。Windows ARM64 原生应用和 32 位应用需要对应架构的输入法组件。
 

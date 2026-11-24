@@ -9,7 +9,7 @@
 struct LengthLimits {
   std::uint32_t answer = 80;
   std::uint32_t continuation = 24;
-  static constexpr unsigned minimum = 8, maximum = 300;
+  static constexpr unsigned minimum = 8, maximum = 999;
   static bool valid(unsigned value) {
     return value >= minimum && value <= maximum;
   }

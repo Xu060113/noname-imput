@@ -58,6 +58,12 @@ inline LengthLimits readLengthLimits() {
   return limits;
 }
 
+inline bool useCaretContext() {
+  DWORD value = 0, bytes = sizeof(value);
+  return RegGetValueW(HKEY_CURRENT_USER, L"Software\\Yuju", L"CaretContext",
+                      RRF_RT_REG_DWORD, nullptr, &value, &bytes) == ERROR_SUCCESS && value == 1;
+}
+
 inline bool writeLengthLimits(const LengthLimits &limits) {
   const DWORD pair[] = {limits.answer, limits.continuation};
   return RegSetKeyValueW(HKEY_CURRENT_USER, L"Software\\Yuju",

@@ -1,4 +1,5 @@
 #include "model.hpp"
+#include "caret_context.hpp"
 #include "rime_api.h"
 #include <functional>
 #include <initguid.h>
@@ -460,6 +461,10 @@ class Service final : public ITfTextInputProcessor,
       verifyCommitUntil = 0;
       if (due && GetTickCount64() >= due) {
         due = 0;
+        if (useCaretContext()) {
+          auto prefix = textBeforeCaret(sel.range, ec);
+          if (!prefix.empty()) question = std::move(prefix);
+        }
         stream = predict(question, accepted, mode, limits);
       }
       if (stream) {

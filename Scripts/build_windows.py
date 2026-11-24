@@ -53,7 +53,8 @@ def main():
          "-o", PAYLOAD / "YujuIME.dll", "-lmsctf", "-lole32", "-loleaut32", "-luuid",
          "-luser32", "-lgdi32", "-lshell32", "-ladvapi32", "-lwinhttp"])
     run([*flags, "-municode", "-Wl,--subsystem,windows", "Windows/settings.cpp",
-         "-o", PAYLOAD / "YujuSettings.exe", "-luser32", "-lgdi32", "-ladvapi32"])
+         "-o", PAYLOAD / "YujuSettings.exe", "-luser32", "-lgdi32", "-ladvapi32",
+         "-lcomdlg32", "-lshell32", "-lole32", "-lshlwapi", "-lxmllite", "-luuid"])
     shutil.copy2(sdk / "lib/rime.dll", PAYLOAD / "rime.dll")
     compiled = PAYLOAD / "Rime/build"
     compiled.mkdir(parents=True, exist_ok=True)
